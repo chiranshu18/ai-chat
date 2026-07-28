@@ -1,0 +1,9 @@
+.ml-container {
+  width: 60%;
+  height: calc(100% - 54px - 24px);
+
+  display: flex;
+  flex-direction: column;
+
+  // border: 1px solid white;
+}
