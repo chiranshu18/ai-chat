@@ -1,0 +1,19 @@
+.msg-container {
+  width: 100%;
+  display: flex;
+
+  .msg-wrapper {
+    max-width: 90%;
+    padding: 12px 16px;
+    background: #212121;
+    border-radius: 24px;
+  }
+}
+
+.msg-user {
+  justify-content: flex-end;
+}
+
+.msg-assistant {
+  justify-content: flex-start;
+}

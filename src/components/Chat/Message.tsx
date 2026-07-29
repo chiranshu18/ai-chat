@@ -1,8 +1,17 @@
-import React from 'react'
+import { Message as MessageType } from "@/types/chat"
+import styles from "./message.module.scss"
 
-const Message = () => {
+interface MessageProps {
+  message: MessageType
+}
+
+const Message = ({ message }: MessageProps) => {
+  const isUser = message.role === "user"
+
   return (
-    <div>Message</div>
+    <div className={`${styles['msg-container']} ${isUser ? styles['msg-user'] : styles['msg-assistant']}`}>
+      <div className={styles['msg-wrapper']}>{message.content}</div>
+    </div>
   )
 }
 

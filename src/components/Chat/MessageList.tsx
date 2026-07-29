@@ -1,7 +1,6 @@
-import React from 'react'
 import Message from "./Message"
-import styles from './messageList.module.scss'
 import { Message as MessageType } from "@/types/chat";
+import styles from './messageList.module.scss'
 
 interface MessageListProps {
   messages: MessageType[];
@@ -10,9 +9,9 @@ interface MessageListProps {
 const MessageList = ({ messages }: MessageListProps) => {
   return (
     <div className={styles['ml-container']}>
-      {messages?.map((item: any, index: number) => {
+      {messages?.map((message: any) => {
         return (
-          <Message key={item.id} />
+          <Message key={message.id} message={message} />
         )
       })}
     </div>
