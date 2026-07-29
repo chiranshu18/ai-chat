@@ -9,7 +9,7 @@ interface MessageListProps {
 const MessageList = ({ messages }: MessageListProps) => {
   return (
     <div className={styles['ml-container']}>
-      {messages?.map((message: any) => {
+      {messages?.map((message) => {
         return (
           <Message key={message.id} message={message} />
         )

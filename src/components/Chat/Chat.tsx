@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { v4 as uuid } from "uuid";
 
 import MessageList from "./MessageList"
 import EmptyState from "./EmptyState"
@@ -11,24 +12,25 @@ const Chat = () => {
   const [messages, setMessages] = useState<Message[]>([]);
 
   const handleSendMessage = (text: string) => {
-    // append user message
-    setMessages((prev) => [
-      ...prev, {
-        id: (prev.length + 1).toString(),
-        role: "user" as const,
-        content: text
-      }
-    ])
+    // append user message and mock response
+    const newMsg = {
+      id: uuid(),
+      role: "user" as const,
+      content: text
+    }
 
-    // append a mock response
-    setMessages((prev) => [
-      ...prev, {
-        id: (prev.length + 1).toString(),
-        role: "assistant" as const,
-        content: 'This is a mock response.'
-      }
-    ])
+    const newResponse = {
+      id: uuid(),
+      role: "assistant" as const,
+      content: 'This is a mock response.'
+    }
+
+    setMessages((prev) => [...prev, newMsg, newResponse])
   }
+
+  useEffect(() => {
+    console.log(messages)
+  }, [messages])
 
   return (
     <div className={styles["chat-container"]}>

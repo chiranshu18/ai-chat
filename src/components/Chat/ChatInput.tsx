@@ -4,7 +4,7 @@ import styles from "./chatInput.module.scss"
 import { SendHorizontal } from 'lucide-react'
 
 interface ChatInputProps {
-  onMessageSend: any
+  onMessageSend: (message: string) => void;
 }
 
 const ChatInput = ({ onMessageSend }: ChatInputProps) => {
@@ -27,7 +27,7 @@ const ChatInput = ({ onMessageSend }: ChatInputProps) => {
   return (
     <div className={styles['ci-container']}>
       <input
-        type='text' 
+        type='text'
         value={query}
         placeholder='Ask anything!'
         onChange={(e) => setQuery(e.target.value)}
