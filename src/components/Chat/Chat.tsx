@@ -12,27 +12,23 @@ const Chat = () => {
 
   const handleSendMessage = (text: string) => {
     // append user message
-    const newMsg: Message = {
-      id: (messages.length + 1).toString(),
-      role: "user" as const,
-      content: text
-    }
-    setMessages((prev) => [...prev, newMsg])
+    setMessages((prev) => [
+      ...prev, {
+        id: (prev.length + 1).toString(),
+        role: "user" as const,
+        content: text
+      }
+    ])
 
     // append a mock response
-    const newResponse: Message = {
-      id: (messages.length + 1).toString(),
-      role: "assistant" as const,
-      content: 'This is a mock response.'
-    }
-    setMessages((prev) => [...prev, newResponse])
+    setMessages((prev) => [
+      ...prev, {
+        id: (prev.length + 1).toString(),
+        role: "assistant" as const,
+        content: 'This is a mock response.'
+      }
+    ])
   }
-
-  useEffect(() => {
-    if (messages.length) {
-      console.log(messages)
-    }
-  }, [messages])
 
   return (
     <div className={styles["chat-container"]}>
