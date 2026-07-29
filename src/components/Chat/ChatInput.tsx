@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import styles from "./chatInput.module.scss"
-
 import { SendHorizontal } from 'lucide-react'
 
 interface ChatInputProps {
@@ -17,8 +16,9 @@ const ChatInput = ({ onMessageSend }: ChatInputProps) => {
     setQuery('');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Send message on Enter key (without Shift key)
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -26,10 +26,10 @@ const ChatInput = ({ onMessageSend }: ChatInputProps) => {
 
   return (
     <div className={styles['ci-container']}>
-      <input
-        type='text'
+      <textarea
         value={query}
         placeholder='Ask anything!'
+        rows={1}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
       />

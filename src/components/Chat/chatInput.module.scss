@@ -5,7 +5,7 @@
   transform: translateX(-50%);
 
   width: 60%;
-  height: 54px;
+  min-height: 54px;
 
   display: flex;
   justify-content: space-between;
@@ -13,20 +13,31 @@
 
   padding-right: 24px;
 
-  border-radius: 100px;
+  border-radius: 28px; // Adjusted for a cleaner multiline pill look
   border: 1px solid #433c3c;
   background: #212121;
 
-  input {
+  textarea {
     width: 100%;
     height: 100%;
-    padding: 0 24px;
-    border-radius: 100px;
-    display: flex;
+    padding: 16px 24px; // Vertical padding centers text nicely
+    background: transparent;
+    color: #fff;
+    border: none;
     outline: none;
+    resize: none; // Disables manual user drag-resize
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.4;
+
+    &::placeholder {
+      color: #888;
+    }
   }
 
   .send-button {
     cursor: pointer;
+    flex-shrink: 0; // Prevents icon from squishing when text grows
+    color: #fff;
   }
 }
