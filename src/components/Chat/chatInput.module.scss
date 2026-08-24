@@ -40,4 +40,8 @@
     flex-shrink: 0; // Prevents icon from squishing when text grows
     color: #fff;
   }
+
+  .send-button-disabled {
+    cursor: not-allowed;
+  }
 }

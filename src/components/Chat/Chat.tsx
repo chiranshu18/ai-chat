@@ -10,6 +10,7 @@ import { Message } from "@/types/chat"
 
 const Chat = () => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isThinking, setIsthinking] = useState<boolean>(false)
 
   const handleSendMessage = (text: string) => {
     // append user message and mock response
@@ -25,7 +26,13 @@ const Chat = () => {
       content: 'This is a mock response.'
     }
 
-    setMessages((prev) => [...prev, newMsg, newResponse])
+    setMessages((prev) => [...prev, newMsg]);
+    setIsthinking(true);
+
+    setTimeout(() => {
+      setMessages((prev) => [...prev, newResponse])
+      setIsthinking(false)
+    }, 3000)
   }
 
   useEffect(() => {
@@ -34,8 +41,8 @@ const Chat = () => {
 
   return (
     <div className={styles["chat-container"]}>
-      {messages?.length ? <MessageList messages={messages} /> : <EmptyState />}
-      <ChatInput onMessageSend={handleSendMessage} />
+      {messages?.length ? <MessageList messages={messages} isThinking={isThinking}/> : <EmptyState />}
+      <ChatInput onMessageSend={handleSendMessage} isThinking={isThinking} />
     </div>
   )
 }

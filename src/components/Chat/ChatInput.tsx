@@ -4,12 +4,14 @@ import { SendHorizontal } from 'lucide-react'
 
 interface ChatInputProps {
   onMessageSend: (message: string) => void;
+  isThinking: boolean;
 }
 
-const ChatInput = ({ onMessageSend }: ChatInputProps) => {
+const ChatInput = ({ onMessageSend, isThinking }: ChatInputProps) => {
   const [query, setQuery] = useState('');
 
   const handleSend = () => {
+    if (isThinking) return;
     if (!query.trim()) return;
 
     onMessageSend(query);
@@ -33,7 +35,7 @@ const ChatInput = ({ onMessageSend }: ChatInputProps) => {
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <SendHorizontal className={styles["send-button"]} onClick={handleSend} />
+      <SendHorizontal className={`${styles["send-button"]} ${isThinking ? styles["send-button-disabled"] : ""}`} onClick={handleSend} color={isThinking ? 'gray' : 'white'} />
     </div>
   )
 }

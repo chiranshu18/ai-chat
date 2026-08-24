@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react'
 import Message from "./Message"
 import { Message as MessageType } from "@/types/chat";
 import styles from './messageList.module.scss'
+import styles2 from './message.module.scss'
 
 interface MessageListProps {
   messages: MessageType[];
+  isThinking: boolean;
 }
 
-const MessageList = ({ messages }: MessageListProps) => {
+const MessageList = ({ messages, isThinking }: MessageListProps) => {
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
   const scrollIntoView = () => {
@@ -25,6 +27,11 @@ const MessageList = ({ messages }: MessageListProps) => {
           <Message key={message.id} message={message} />
         )
       })}
+      {isThinking &&
+        <div className={`${styles2['msg-container']} ${styles2['msg-assistant']}`}>
+          <div className={styles2['msg-wrapper']}>Thinking...</div>
+        </div>
+      }
       <div ref={messageEndRef} />
     </div>
   )
