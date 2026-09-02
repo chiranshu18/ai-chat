@@ -28,7 +28,7 @@ const MessageList = ({ messages, isThinking }: MessageListProps) => {
         )
       })}
       {isThinking &&
-        <div className={`${styles2['msg-container']} ${styles2['msg-assistant']}`}>
+        <div className={`${styles2['msg-container']} ${styles2['msg-assistant']} ${styles2['thinking']}`}>
           <div className={styles2['msg-wrapper']}>Thinking...</div>
         </div>
       }
