@@ -20,8 +20,10 @@ const Chat = () => {
       content: text
     }
 
+    const updatedMessages = [...messages, newMsg];
+
     // show the user's message immediately
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages(updatedMessages);
     setIsthinking(true);
 
     try {
@@ -31,12 +33,7 @@ const Chat = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [
-            {
-              role: newMsg.role,
-              content: newMsg.content,
-            },
-          ],
+          messages: updatedMessages,
         }),
       })
 
