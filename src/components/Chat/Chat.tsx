@@ -12,7 +12,7 @@ const Chat = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsthinking] = useState<boolean>(false)
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = async (text: string) => {
     // append user message and mock response
     const newMsg = {
       id: uuid(),
@@ -20,28 +20,49 @@ const Chat = () => {
       content: text
     }
 
-    const newResponse = {
-      id: uuid(),
-      role: "assistant" as const,
-      content: 'This is a mock response.'
-    }
-
+    // show the user's message immediately
     setMessages((prev) => [...prev, newMsg]);
     setIsthinking(true);
 
-    setTimeout(() => {
-      setMessages((prev) => [...prev, newResponse])
-      setIsthinking(false)
-    }, 3000)
-  }
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: newMsg.role,
+              content: newMsg.content,
+            },
+          ],
+        }),
+      })
 
-  useEffect(() => {
-    console.log(messages)
-  }, [messages])
+      if (!response.ok) {
+        throw new Error("Failed to get response");
+      }
+
+      const data = await response.json();
+      const assistantMessage: Message = {
+        id: uuid(),
+        role: "assistant",
+        content: data.message.content,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+
+    } catch (error) {
+      console.error("Chat error:", error);
+    } finally {
+      setIsthinking(false);
+    }
+  }
 
   return (
     <div className={styles["chat-container"]}>
-      {messages?.length ? <MessageList messages={messages} isThinking={isThinking}/> : <EmptyState />}
+      {messages?.length ? <MessageList messages={messages} isThinking={isThinking} /> : <EmptyState />}
       <ChatInput onMessageSend={handleSendMessage} isThinking={isThinking} />
     </div>
   )
