@@ -10,7 +10,9 @@ const Message = ({ message }: MessageProps) => {
 
   return (
     <div className={`${styles['msg-container']} ${isUser ? styles['msg-user'] : styles['msg-assistant']}`}>
-      <div className={styles['msg-wrapper']}>{message.content}</div>
+      <div className={styles['msg-wrapper']}>
+        {!isUser && !message.content ? "Thinking..." : message.content}
+      </div>
     </div>
   )
 }

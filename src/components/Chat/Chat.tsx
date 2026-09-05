@@ -25,6 +25,14 @@ const Chat = () => {
     setMessages(updatedMessages);
     setIsthinking(true);
 
+    const assistantMessage: Message = {
+      id: uuid(),
+      role: "assistant",
+      content: "",
+    };
+
+    setMessages((prev) => [...prev, assistantMessage]);
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -56,6 +64,17 @@ const Chat = () => {
         const chunk = decoder.decode(value);
 
         console.log("chunk: ", chunk);
+        setMessages((prev) => {
+          const updatedMessages = [...prev];
+
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+          if (lastMessage.role === "assistant") {
+            lastMessage.content += chunk;
+          }
+
+          return updatedMessages;
+        });
       }
 
     } catch (error) {
@@ -67,7 +86,7 @@ const Chat = () => {
 
   return (
     <div className={styles["chat-container"]}>
-      {messages?.length ? <MessageList messages={messages} isThinking={isThinking} /> : <EmptyState />}
+      {messages?.length ? <MessageList messages={messages} /> : <EmptyState />}
       <ChatInput onMessageSend={handleSendMessage} isThinking={isThinking} />
     </div>
   )
