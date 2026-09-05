@@ -20,7 +20,7 @@ export default async function handler(
       });
     }
 
-    const response = await gemini.models.generateContent({
+    const response = await gemini.models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: messages.map((message) => ({
         role: message.role,
@@ -32,17 +32,29 @@ export default async function handler(
       })),
     });
 
-    return res.status(200).json({
-      message: {
-        role: "assistant",
-        content: response.text,
-      },
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Transfer-Encoding": "chunked",
     });
+
+    for await (const chunk of response) {
+      console.log(chunk.text);
+
+      if (chunk.text) {
+        res.write(chunk.text);
+      }
+    }
+
+    res.end();
   } catch (error) {
     console.error("Gemini API error:", error);
 
-    return res.status(500).json({
-      error: "Something went wrong",
-    });
+    if (!res.headersSent) {
+      return res.status(500).json({
+        error: "Something went wrong",
+      });
+    }
+
+    res.end();
   }
 }
