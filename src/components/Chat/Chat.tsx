@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { v4 as uuid } from "uuid";
 
 import MessageList from "./MessageList"
@@ -13,12 +13,11 @@ const Chat = () => {
   const [isThinking, setIsthinking] = useState<boolean>(false)
 
   const handleSendMessage = async (text: string) => {
-    // append user message and mock response
     const newMsg = {
       id: uuid(),
       role: "user" as const,
       content: text
-    }
+    };
 
     const updatedMessages = [...messages, newMsg];
 
@@ -35,27 +34,36 @@ const Chat = () => {
         body: JSON.stringify({
           messages: updatedMessages,
         }),
-      })
+      });
 
       if (!response.ok) {
         throw new Error("Failed to get response");
       }
 
-      const data = await response.json();
-      const assistantMessage: Message = {
-        id: uuid(),
-        role: "assistant",
-        content: data.message.content,
-      };
+      const reader = response.body?.getReader();
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      if (!reader) {
+        throw new Error("Response body is not available");
+      }
+
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+
+        console.log("chunk: ", chunk);
+      }
 
     } catch (error) {
       console.error("Chat error:", error);
     } finally {
       setIsthinking(false);
     }
-  }
+  };
 
   return (
     <div className={styles["chat-container"]}>
