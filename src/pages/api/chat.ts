@@ -38,8 +38,6 @@ export default async function handler(
     });
 
     for await (const chunk of response) {
-      console.log(chunk.text);
-
       if (chunk.text) {
         res.write(chunk.text);
       }
