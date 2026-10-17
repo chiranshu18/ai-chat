@@ -63,6 +63,7 @@ src/
     Chat/MessageList.tsx   Scrolls to the latest message.
     Chat/Message.tsx       User text or assistant markdown.
     Chat/EmptyState.tsx    "Hi, How can I help you today?"
+  hooks/                   Empty. No hooks yet.
   lib/gemini.ts            GoogleGenAI client.
   types/chat.ts            Message type.
   styles/globals.css       Tailwind import + unused light/dark CSS variables.
@@ -72,10 +73,11 @@ Path alias: `@/*` → `src/*` (`tsconfig.json`).
 
 Layout math, used by later UI work:
 
-- Header height is `54px`.
-- Chat column width is `60%`, centered.
-- The composer sits `24px` from the bottom of the chat area (`position: absolute`).
-- Message list height is `calc(100% - 54px - 24px)` so it clears the composer.
+- The page is `100vh`. The header is `54px` tall and is a sibling of `Chat`, not a child of it.
+- `.chat-container` is `height: calc(100% - 54px)`. That `54px` is the header.
+- The chat column width is `60%`, centered.
+- The composer is `position: absolute`, `min-height: 54px`, `bottom: 24px`.
+- The message list height is `calc(100% - 54px - 24px)` inside `.chat-container`. Those numbers are the composer's min-height and bottom offset. They match the header height by coincidence. The list does not subtract the header again.
 
 ## Data model today
 
@@ -119,8 +121,9 @@ sequenceDiagram
 3. Append an assistant `Message` with `content: ""`. `Message` renders that as the text `Thinking...`.
 4. `POST /api/chat` with JSON `{ messages: updatedMessages }`. `updatedMessages` is the history **plus the new user message, and not the empty assistant placeholder**.
 5. If `response.ok` is false, throw. If `response.body` has no reader, throw.
-6. Read the stream with `TextDecoder`. Each chunk mutates the last message: `lastMessage.content += chunk` inside `setMessages`, then returns the same object in a new array.
-7. `catch` only `console.error`s. `finally` sets `isThinking` to false.
+6. Read the stream with `TextDecoder`. `decode(value)` is called without `{ stream: true }`, so a multi-byte character split across chunks can turn into the replacement character U+FFFD. Each chunk is logged with `console.log("chunk: ", chunk)`.
+7. The update copies the array, then mutates whichever message is last: `updatedMessages[updatedMessages.length - 1].content += chunk` when that item's role is `assistant`. It does not update by message id. The same object is returned inside a new array.
+8. `catch` only `console.error`s. `finally` sets `isThinking` to false.
 
 There is no `AbortController`. A failed request leaves the empty assistant message in the list, so the bubble keeps saying `Thinking...` after `isThinking` is false.
 
@@ -139,7 +142,8 @@ There is no `AbortController`. A failed request leaves the empty assistant messa
 - Otherwise `gemini.models.generateContentStream` with model `gemini-3-flash-preview`.
 - Each client message is mapped to `{ role: message.role, parts: [{ text: message.content }] }`. Role is forwarded unchanged.
 - Response headers: `200`, `Content-Type: text/plain; charset=utf-8`, chunked. Each `chunk.text` is written raw. No SSE framing, no JSON lines.
-- On throw: log `Gemini API error`. If headers are not sent, `500` `{ error: "Something went wrong" }`. If headers were already sent, `res.end()`.
+- On throw: log `Gemini API error`. If headers are not sent, `500` `{ error: "Something went wrong" }` for every failure. A missing key, a quota error, and a retired model id are indistinguishable to the client, and the body never includes the underlying reason.
+- If the throw happens after `writeHead`, the handler calls `res.end()` with no error marker. The client sees a normal end of stream, so a truncated reply looks complete.
 
 ### Gemini client (`src/lib/gemini.ts`)
 
@@ -165,16 +169,18 @@ The client is created at module load. A missing key fails on the first generatio
 
 These are bugs or missing seams. Each one names the roadmap item that should fix it. Do not "clean them up" in an unrelated change.
 
-1. **Gemini roles.** The Gemini contents API expects `"user"` and `"model"`. This app stores and sends `"assistant"`. The first turn is user-only, so it can succeed. A second turn includes the previous assistant message and can be rejected. Fix this in feature 2 (error handling), before regenerate and edit, by mapping `assistant` → `model` only in `src/pages/api/chat.ts`. Keep `"assistant"` in client state and storage.
-2. **In-place stream updates.** `Chat.tsx` mutates `lastMessage.content`. Edit, regenerate, and persistence need a new message object per update: copy the array and replace the last item. Fix this while touching the stream loop (feature 1 or 2).
-3. **Errors look like thinking.** An empty assistant `content` always renders `Thinking...`, including after failure and after `isThinking` flips back to false. Feature 2 adds an explicit error (or status) so empty content is only the in-progress state.
-4. **No abort, retry, settings, storage, or conversation id.** Those are features 1, 2, 6, 7, and 11. The model string `gemini-3-flash-preview` stays hardcoded until feature 11.
-5. **React Strict Mode is off.** Effects do not double-invoke in dev. Do not rely on that. If Strict Mode is turned on later, the send effect must tolerate a remount (abort on cleanup).
-6. **Streaming format stays plain text chunks.** Do not switch to SSE or JSON lines unless a feature explicitly needs structured events (for example a distinct error event mid-stream). Feature 2 can keep using non-OK HTTP status plus the existing JSON `{ error }` body for failures before the first chunk.
+1. **Gemini roles.** The Gemini contents API expects `"user"` and `"model"`. This app stores and sends `"assistant"`. The first turn is user-only, so it can succeed. A second turn includes the previous assistant message and can be rejected. Fix this first, as feature 0, before stop/cancel. It is one map in `src/pages/api/chat.ts`: `role: message.role === "assistant" ? "model" : "user"`. Keep `"assistant"` in client state and storage. Feature 2 is the error UX and must not block this.
+2. **Stream updates mutate the last message by index.** The loop copies the array, then does `lastMessage.content += chunk` on `updatedMessages[updatedMessages.length - 1]`. Replacing that object immutably is required for edit and persistence. The index is the sharper bug: after stop-then-send, regenerate, edit, or switching conversations, the last message is not reliably the one the in-flight request owns. The shared send helper must close over the assistant message `id`, replace that object, and drop the chunk if the id is no longer in the list. Fix this in feature 1.
+3. **UTF-8 split across chunks.** `decoder.decode(value)` does not pass `{ stream: true }`. A multi-byte character divided across reads becomes U+FFFD, so emoji and non-ASCII text corrupt intermittently. Fix this in feature 1, in the same loop. Remove the leftover `console.log("chunk: ", chunk)` there too.
+4. **Errors look like thinking.** An empty assistant `content` always renders `Thinking...`, including after failure and after `isThinking` flips back to false. Feature 2 adds an explicit status so empty content is only the in-progress state.
+5. **No abort, retry, settings, storage, or conversation id.** Those are features 1, 2, 6, 7, and 11. The model string `gemini-3-flash-preview` stays hardcoded until feature 11. It is a preview id and can start 404ing; feature 2's error copy should say the model is unavailable rather than "Something went wrong".
+6. **React Strict Mode is off.** Effects do not double-invoke in dev. Do not rely on that. If Strict Mode is turned on later, the send effect must tolerate a remount (abort on cleanup).
+7. **Streaming format stays plain text chunks.** Do not switch to SSE. Failures before the first byte stay a non-OK status plus a JSON `{ error }` body. Failures after headers are sent currently look like a successful short reply (see the API section). Feature 2 distinguishes that case with a trailing sentinel line. That sentinel is not a new streaming protocol.
+8. **Auto-scroll fights the reader.** `MessageList` calls `scrollIntoView({ behavior: "smooth" })` on every `messages` change, including every chunk. Scrolling up during a reply yanks the view back down. Fix this in feature 1.
 
 ## Target data model
 
-Adopt this shape in `src/types/chat.ts` when persistence starts (feature 6), not before. Feature 5 (new chat) can still be a `setMessages([])` if it lands first. Feature 6 must persist `Conversation`, not a bare `Message[]`, so feature 7 does not migrate storage.
+Adopt this shape in `src/types/chat.ts` when persistence starts (feature 6), not before. Feature 5 remounts `Chat` instead of introducing this store. Feature 6 must persist `Conversation`, not a bare `Message[]`, so feature 7 does not migrate storage.
 
 ```ts
 export type Role = "user" | "assistant";
@@ -209,6 +215,7 @@ export interface ChatStore {
 Rules:
 
 - `status` is optional so current messages stay valid. Set it once feature 2 exists. `"streaming"` replaces the "empty content means thinking" heuristic.
+- `loadStore()` (feature 6) rewrites any stored `status: "streaming"` to `"cancelled"`. A tab closed mid-reply must not reload as a permanent `Thinking...`.
 - Title: first user message, trimmed, capped (about 40 characters). Fallback `New chat` until the first send.
 - `settings.model` defaults to the current hardcoded model until feature 11 exposes a control. Persist it from day one so a later settings change does not rewrite old records.
 - Storage key: `ai-chat:v1`. If the shape changes, bump the suffix and ignore unknown payloads (fall back to one empty conversation). Do not throw on corrupt JSON.
@@ -241,7 +248,27 @@ Unless a later request adds them:
 
 Order is the priority order. Each item lists what the user sees, which files to touch, what it depends on, and when it is done.
 
-Shared send helper, introduce it in feature 1 and reuse it: one function in `Chat.tsx` (or `src/lib/streamChat.ts` if the component gets crowded) that accepts the message list to send, creates the assistant placeholder, fetches, and reads chunks. Regenerate, edit, and retry should call that helper instead of copying the loop.
+Shared send helper, introduce it in feature 1 and reuse it: one function in `Chat.tsx` (or `src/lib/streamChat.ts` if the component gets crowded) that accepts the message list to send, creates the assistant placeholder, fetches, and reads chunks. It closes over that assistant message's `id` and updates by id. Regenerate, edit, and retry should call that helper instead of copying the loop.
+
+### 0. Gemini role map
+
+Learn: the contents API's role names. Ship this alone, before feature 1. Multi-turn chat is broken until it lands, and the fix is not part of the error-handling UX.
+
+**Behavior.** No UI change. A second message in the same conversation gets a reply instead of a rejected request.
+
+**Files.** `src/pages/api/chat.ts` only. Map roles when building `contents`:
+
+```ts
+role: message.role === "assistant" ? "model" : "user",
+```
+
+**Connects to.** Feature 2 still owns what the user sees when Gemini fails, including a preview model id that starts 404ing. This item only makes the second turn valid.
+
+**Done when.**
+
+- [ ] A second user message in one chat streams a reply
+- [ ] Client messages still use role `"assistant"`
+- [ ] The Gemini request uses `"model"` for those messages
 
 ### 1. Stop / cancel generation
 
@@ -249,40 +276,57 @@ Learn: `AbortController`, request lifecycle.
 
 **Behavior.** While a reply is streaming, the composer shows a stop control instead of send. Activating it aborts the `fetch` and the reader. The partial assistant text stays on screen. `isThinking` becomes false so the user can type again. Enter does not send while a request is in flight (unchanged). Stopping is not an error.
 
+While a reply is streaming, the list auto-scrolls only if it is already near the bottom (about 80px). Use instant scrolling during the stream. A new user send still brings the latest message into view. Scrolling up to read stays put.
+
 **Files.**
 
-- `src/components/Chat/Chat.tsx` — hold the controller in a ref. Pass `signal` to `fetch`. On abort, stop the read loop. Ignore `AbortError` in the catch. In `finally`, clear thinking only for the request that just finished (ignore a stale completion if a newer send exists; a generation counter or comparing the controller ref is enough).
+- `src/components/Chat/Chat.tsx` — hold the controller in a ref. Pass `signal` to `fetch`. On abort, stop the read loop. Ignore `AbortError` in the catch. In `finally`, clear thinking only for the request that just finished (ignore a stale completion if a newer send exists; a generation counter or comparing the controller ref is enough). Decode with `{ stream: true }`. Remove the chunk `console.log`. Update the assistant message by the id captured when the placeholder was created; skip the chunk if that id is gone. Replace the message object instead of mutating it.
 - `src/components/Chat/ChatInput.tsx` — stop button while `isThinking`, calling a new `onStop` prop. Use a square/stop icon from `lucide-react`. Send stays disabled during thinking.
+- `src/components/Chat/MessageList.tsx` — near-bottom check before following the sentinel. Pass whether a reply is streaming so the behavior is `auto` during chunks and `smooth` on a new send.
 
-**Connects to.** Feature 2 must not treat abort as a failure banner. Feature 3 and 4 call the same helper, so they get stop for free.
+**Connects to.** Feature 2 must not treat abort as a failure banner. Feature 3 and 4 call the same helper, so they get stop, id-targeted updates, and the UTF-8 decode for free.
 
 **Done when.**
 
 - [ ] Stop aborts the in-flight request and the UI becomes usable immediately
 - [ ] Partial text remains; no error banner on abort
 - [ ] A send started after stop is not overwritten by the aborted request
-- [ ] Stream updates replace the last message immutably
+- [ ] Chunks update the assistant message with that id, immutably, and a chunk whose id is gone is ignored
+- [ ] A multi-byte character split across chunks is not replaced with U+FFFD
+- [ ] The chunk `console.log` is gone
+- [ ] Scrolling up during a stream stays put, and a new send still brings the latest message into view
 
 ### 2. Error handling UX
 
 Learn: API failures, retries, error states.
 
-**Behavior.** If the POST fails, the body is missing, or the stream throws (except abort), the assistant placeholder shows an error message and a Retry action. It must not keep saying `Thinking...`. Retry resends the same user history. A 500 JSON body `{ error }` is shown when the response is not OK and the body parses. Network failures get a generic sentence.
+**Behavior.** If the POST fails, the body is missing, or the stream throws (except abort), the assistant placeholder shows an error message and a Retry action. It must not keep saying `Thinking...`. Retry resends the same user history. When the response is not OK and the body parses, show its `error` string. Network failures get a generic sentence.
+
+The API must stop using one sentence for every failure. Map a few known cases to distinct messages that do not include the provider payload, the API key, or the request body. Log the original error on the server only.
+
+- Missing `GEMINI_API_KEY` → `API key is not configured`
+- Model not found, including a retired preview id → `This model is unavailable`
+- Quota or HTTP 429 → `Rate limit reached. Try again in a moment.`
+- Anything else before headers → `Something went wrong`
+
+If the failure happens after headers are sent, write the exact suffix `\n[[ai-chat:error]]` and then end the response. The client strips a trailing `[[ai-chat:error]]` from the assistant content, does not show the marker, and sets `status: "error"` with `Something went wrong`. A reply that ends without the marker is complete, partial text included. If the model itself emits that exact suffix, the reply is treated as failed. That collision is accepted.
 
 **Files.**
 
 - `src/types/chat.ts` — add optional `status` and `error` on `Message` (see target model). Do not add `Conversation` yet.
-- `src/components/Chat/Chat.tsx` — set `status: "error"` and `error` on the placeholder. Retry calls the shared send helper with messages up to and including the last user message, after removing the failed assistant message.
+- `src/components/Chat/Chat.tsx` — set `status: "error"` and `error` on the placeholder, by id. Retry calls the shared send helper with messages up to and including the last user message, after removing the failed assistant message. On a clean end of stream, strip the sentinel if present.
 - `src/components/Chat/Message.tsx` — render error + Retry only when `status === "error"`. Render `Thinking...` only when content is empty and status is streaming (or content is empty and there is no error). Wire the unused `.thinking` class if it still matches the look.
-- `src/pages/api/chat.ts` — map `role === "assistant"` to Gemini role `"model"` before `generateContentStream`. Leave client roles as `user` | `assistant`.
+- `src/pages/api/chat.ts` — the error map above, and the sentinel write in the `headersSent` branch. The role map is feature 0; do not redo it here.
 
-**Connects to.** Multi-turn chat (regenerate, edit, a normal second message) depends on the role map. Feature 3's regenerate is almost the same call as Retry.
+**Connects to.** Feature 0 has already made the second turn valid. Feature 3's regenerate is almost the same call as Retry. Feature 11's preview model id depends on the "model unavailable" copy.
 
 **Done when.**
 
 - [ ] Failed requests show an error on that assistant message and a Retry control
 - [ ] Abort does not show that error
-- [ ] A second user message in the same chat succeeds (assistant history is sent as Gemini `model`)
+- [ ] A failure after the first chunk keeps the partial text, shows the error, and does not leave the marker visible
+- [ ] Missing key, retired model, and quota show the three distinct messages above
+- [ ] The client still does not receive the raw provider error
 - [ ] Retry produces a new assistant reply without duplicating the user message
 
 ### 3. Regenerate response
@@ -333,10 +377,12 @@ Learn: conversation lifecycle.
 
 **Files.**
 
-- `src/components/Layout/Header.tsx` — button, `onNewChat` prop. `index.tsx` can pass it through, or `Header` can stay presentational and `Chat` can render the header. Prefer keeping `Header` presentational and lifting the handler to `index.tsx` only if `Chat` does not already own the state. Simplest: move the header action callback into `Chat` by rendering `Header` inside `Chat`, or pass `onNewChat` from a thin parent. Do not introduce a global store yet.
-- `src/components/Chat/Chat.tsx` — abort, `setMessages([])`, `setIsthinking(false)`.
+- Keep `Header` and `Chat` as siblings in `src/pages/index.tsx`. Do not render `Header` inside `Chat`. `.chat-container` is `height: calc(100% - 54px)` because the header is that sibling; nesting it would double-count the 54px and break the layout.
+- `src/components/Layout/Header.tsx` — New chat button and an `onNewChat` prop. Leave `Header` presentational.
+- `src/pages/index.tsx` — hold a `resetKey` and pass `key={resetKey}` to `Chat`. New chat increments the key, which remounts `Chat` empty and clears the composer. This is the cheap version. Features 6 and 7 lift conversation state and replace the remount with a store action.
+- `src/components/Chat/Chat.tsx` — abort the in-flight request in an effect cleanup so the remount cannot apply leftover chunks.
 
-**Connects to.** Feature 6 treats this as "create a new `Conversation` and make it active" instead of only clearing an array. Implement the clear behavior now; swap the body of the handler in feature 6.
+**Connects to.** Feature 6 treats New chat as "append a `Conversation` and select it" instead of remounting. Swap the handler body then. Do not introduce the store in this feature.
 
 **Done when.**
 
@@ -353,7 +399,7 @@ Learn: `localStorage`, serialization.
 **Files.**
 
 - `src/types/chat.ts` — add `Conversation`, `ConversationSettings`, `ChatStore` from the target model.
-- `src/lib/storage.ts` — `loadStore()` / `saveStore()` for key `ai-chat:v1`. Guard `window`. Ignore parse errors.
+- `src/lib/storage.ts` — `loadStore()` / `saveStore()` for key `ai-chat:v1`. Guard `window`. Ignore parse errors. On load, rewrite every message with `status: "streaming"` to `status: "cancelled"` so a closed tab does not come back as `Thinking...`.
 - `src/components/Chat/Chat.tsx` — initialize from storage. Persist the `Conversation` shape even though the UI still shows one chat. New chat (feature 5) appends a new conversation and sets `activeId`, or replaces the single slot if you truly only keep one until feature 7. **Keep a list.** One element is fine. New chat pushes another item and switches `activeId` so feature 7 is a UI over existing data.
 - Title: set from the first user message when it is sent, if the title is still `New chat`.
 
@@ -364,6 +410,7 @@ Learn: `localStorage`, serialization.
 - [ ] Reload restores messages, title, active id, and settings
 - [ ] Storage shape is `ChatStore` under `ai-chat:v1`
 - [ ] Bad JSON falls back to one empty conversation
+- [ ] A message saved while `streaming` reloads as `cancelled`, not as `Thinking...`
 - [ ] New chat creates another stored conversation without deleting the previous one
 - [ ] The API key is never written to storage
 
@@ -397,7 +444,8 @@ Learn: markdown customization.
 
 **Files.**
 
-- `src/components/Chat/Message.tsx` — `ReactMarkdown` `components` override for `code` / `pre`.
+- `src/components/Chat/Message.tsx` — `ReactMarkdown` `components` override for `code` / `pre`. Memoize `Message` on `id`, `content`, and `status` so a streaming chunk does not re-render earlier bubbles. `ReactMarkdown` still re-parses the one message that is growing; that is acceptable.
+- Memoize the code-block component on its source string so unchanged fences are not re-highlighted on every token.
 - Add one highlighter dependency. Prefer `react-syntax-highlighter` with one style that fits the `#212121` bubble, or `shiki` if the bundle tradeoff is acceptable. Do not add both.
 - Keep `remark-gfm`.
 
@@ -409,6 +457,8 @@ Learn: markdown customization.
 - [ ] A fence without a language still renders as code
 - [ ] Inline code is not rendered as a block
 - [ ] Streaming markdown does not crash on an unclosed fence (partial blocks may be unstyled until the fence closes; that is acceptable)
+- [ ] Earlier messages do not re-render when a later message's content streams
+- [ ] An unchanged code block is not re-highlighted on later tokens
 
 ### 9. Copy code / copy response
 
@@ -442,14 +492,14 @@ Learn: DOM measurements, UX.
 - `src/components/Chat/ChatInput.tsx` — on change, set height to `auto`, then `scrollHeight`, capped. Reset height when `query` becomes `""`.
 - `src/components/Chat/chatInput.module.scss` — `max-height`, `overflow-y: auto`. Keep `resize: none`.
 
-**Connects to.** The message list already clears the composer with a fixed offset. If the composer grows, the list should not hide behind it: give the chat column bottom padding equal to the composer height, or let the composer participate in normal flow instead of `position: absolute`. Do this in this feature if tall input covers the last message.
+**Layout (required).** A growing composer will cover the last messages. The list height is a static `calc(100% - 54px - 24px)`, and that `54px` is the composer's min-height, not the header. The composer is `position: absolute`, so it does not push the list. Make `.chat-container` a column flex: the list is `flex: 1; min-height: 0; overflow: auto`, and the composer sits in normal flow under it. Drop the absolute positioning, or use an equivalent that reserves the composer's real height.
 
 **Done when.**
 
 - [ ] One line stays one line tall
 - [ ] Several lines grow the field until the max, then the field scrolls
 - [ ] After send, the field returns to one line
-- [ ] The latest message stays visible above the composer when the field is tall
+- [ ] The latest message stays visible above the composer when the field is at max height
 
 ### 11. Model / settings controls
 
@@ -459,9 +509,12 @@ Learn: API parameters, UI state.
 
 **Files.**
 
+- `src/lib/models.ts` — export `DEFAULT_MODEL` (`gemini-3-flash-preview`) and the allowlist. Both the API and the picker import this module so the dropdown cannot offer an id the server rejects.
 - `src/components/Chat/Chat.tsx` — pass `conversation.settings` into the POST body: `{ messages, model }`.
-- `src/pages/api/chat.ts` — use `req.body.model` when it is a non-empty string in an allowlist; otherwise the default. Do not pass arbitrary strings through to Gemini. Start the allowlist with `gemini-3-flash-preview` plus any other current Gemini model ids you verify while implementing.
+- `src/pages/api/chat.ts` — use `req.body.model` when it is in the allowlist; otherwise `DEFAULT_MODEL`. Do not pass arbitrary strings through to Gemini. Add other current Gemini model ids only after verifying them while implementing.
 - Sidebar rows do not need the model name unless it fits without crowding.
+
+`gemini-3-flash-preview` is a preview id and can start returning not-found. When it does, feature 2's `This model is unavailable` is the message the user should see. Do not special-case a fallback model silently.
 
 **Connects to.** `Conversation.settings` already exists from feature 6, so this is a UI plus the API reading the field. Persist the change through the existing store effect.
 
@@ -483,6 +536,8 @@ Learn: environment variables, production concerns.
 - Vercel (or equivalent) project for this Next Pages app. `src/pages/api/chat.ts` stays a Node server route so the SDK and the key stay on the server.
 - Document the env var in this file (already under How to run). Do not commit `.env.local`.
 - Confirm `next.config.ts` needs no `env` block that would inline the key. `process.env.GEMINI_API_KEY` in `src/lib/gemini.ts` is server-only as long as that module is not imported by client components. Keep it that way. Client code talks only to `/api/chat`.
+- A serverless host can buffer a chunked response so the whole reply arrives at once. Before the first chunk, call `res.flushHeaders()` and set `X-Accel-Buffering: no`. Check in production that tokens arrive incrementally.
+- The route is public, has no auth, and spends the Gemini quota. Auth stays out of scope. Do not add a rate limiter in this feature. Before sharing a public URL, turn on the host's access control (Vercel Deployment Protection or equivalent). An open URL is an accepted risk only for a private learning deploy. Say which of the two you chose in the deploy notes.
 
 **Connects to.** No feature work should import `src/lib/gemini.ts` from a component.
 
@@ -490,14 +545,17 @@ Learn: environment variables, production concerns.
 
 - [ ] `npm run build` succeeds
 - [ ] Production has `GEMINI_API_KEY` set and a real send streams a reply
+- [ ] Tokens arrive incrementally in production, not as one buffered body
 - [ ] The client bundle does not contain the key
 - [ ] `.env*` stays gitignored
+- [ ] The deploy is either behind host access control, or the notes record that an open URL is an accepted risk
 
 ## Suggested implementation order
 
-The priority numbers above are the order to build. Two rules that override "do it as a drive-by":
+The priority numbers above are the order to build. Three rules that override "do it as a drive-by":
 
-- Fix the Gemini `assistant` → `model` map in feature 2, before any feature that sends more than one turn.
+- Ship feature 0 before anything else. Multi-turn chat fails until `assistant` is sent to Gemini as `model`.
+- Feature 1 owns the stream loop: abort, update by message id, `{ stream: true }`, and scroll anchoring.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
-Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They only touch `Message` and `ChatInput`. Features 1 through 5 should stay in order because they share the send helper.
+Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.
