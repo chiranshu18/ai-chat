@@ -140,7 +140,7 @@ There is no `AbortController`. A failed request leaves the empty assistant messa
 - Methods other than POST → `405` `{ error: "Method not allowed" }`.
 - Missing or non-array `messages` → `400` `{ error: "Messages are required" }`.
 - Otherwise `gemini.models.generateContentStream` with model `gemini-3-flash-preview`.
-- Each client message is mapped to `{ role: message.role, parts: [{ text: message.content }] }`. Role is forwarded unchanged.
+- Each client message is mapped to `{ role, parts: [{ text: message.content }] }`. `assistant` is sent as Gemini role `model`. Any other role is sent as `user`. Client state still stores `assistant`.
 - Response headers: `200`, `Content-Type: text/plain; charset=utf-8`, chunked. Each `chunk.text` is written raw. No SSE framing, no JSON lines.
 - On throw: log `Gemini API error`. If headers are not sent, `500` `{ error: "Something went wrong" }` for every failure. A missing key, a quota error, and a retired model id are indistinguishable to the client, and the body never includes the underlying reason.
 - If the throw happens after `writeHead`, the handler calls `res.end()` with no error marker. The client sees a normal end of stream, so a truncated reply looks complete.
@@ -169,7 +169,7 @@ The client is created at module load. A missing key fails on the first generatio
 
 These are bugs or missing seams. Each one names the roadmap item that should fix it. Do not "clean them up" in an unrelated change.
 
-1. **Gemini roles.** The Gemini contents API expects `"user"` and `"model"`. This app stores and sends `"assistant"`. The first turn is user-only, so it can succeed. A second turn includes the previous assistant message and can be rejected. Fix this first, as feature 0, before stop/cancel. It is one map in `src/pages/api/chat.ts`: `role: message.role === "assistant" ? "model" : "user"`. Keep `"assistant"` in client state and storage. Feature 2 is the error UX and must not block this.
+1. **Gemini roles. Shipped in feature 0.** `src/pages/api/chat.ts` maps `assistant` to Gemini role `model` and anything else to `user`. Client messages stay `"assistant"`. Do not forward `message.role` unchanged.
 2. **Stream updates mutate the last message by index.** The loop copies the array, then does `lastMessage.content += chunk` on `updatedMessages[updatedMessages.length - 1]`. Replacing that object immutably is required for edit and persistence. The index is the sharper bug: after stop-then-send, regenerate, edit, or switching conversations, the last message is not reliably the one the in-flight request owns. The shared send helper must close over the assistant message `id`, replace that object, and drop the chunk if the id is no longer in the list. Fix this in feature 1.
 3. **UTF-8 split across chunks.** `decoder.decode(value)` does not pass `{ stream: true }`. A multi-byte character divided across reads becomes U+FFFD, so emoji and non-ASCII text corrupt intermittently. Fix this in feature 1, in the same loop. Remove the leftover `console.log("chunk: ", chunk)` there too.
 4. **Errors look like thinking.** An empty assistant `content` always renders `Thinking...`, including after failure and after `isThinking` flips back to false. Feature 2 adds an explicit status so empty content is only the in-progress state.
@@ -264,11 +264,13 @@ role: message.role === "assistant" ? "model" : "user",
 
 **Connects to.** Feature 2 still owns what the user sees when Gemini fails, including a preview model id that starts 404ing. This item only makes the second turn valid.
 
+**Shipped.** The map matches the snippet above. No other files changed.
+
 **Done when.**
 
-- [ ] A second user message in one chat streams a reply
-- [ ] Client messages still use role `"assistant"`
-- [ ] The Gemini request uses `"model"` for those messages
+- [x] A second user message in one chat streams a reply
+- [x] Client messages still use role `"assistant"`
+- [x] The Gemini request uses `"model"` for those messages
 
 ### 1. Stop / cancel generation
 
@@ -554,7 +556,7 @@ Learn: environment variables, production concerns.
 
 The priority numbers above are the order to build. Three rules that override "do it as a drive-by":
 
-- Ship feature 0 before anything else. Multi-turn chat fails until `assistant` is sent to Gemini as `model`.
+- Feature 0 is shipped. Keep the `assistant` → `model` map in `src/pages/api/chat.ts`.
 - Feature 1 owns the stream loop: abort, update by message id, `{ stream: true }`, and scroll anchoring.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 

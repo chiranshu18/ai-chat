@@ -23,7 +23,7 @@ export default async function handler(
     const response = await gemini.models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: messages.map((message) => ({
-        role: message.role,
+        role: message.role === "assistant" ? "model" : "user",
         parts: [
           {
             text: message.content,
