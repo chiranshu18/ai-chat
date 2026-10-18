@@ -7,10 +7,12 @@ import styles from "./message.module.scss"
 interface MessageProps {
   message: MessageType
   isStreaming: boolean
+  canRegenerate: boolean
   onRetry: (id: string) => void
+  onRegenerate: (id: string) => void
 }
 
-const Message = ({ message, isStreaming, onRetry }: MessageProps) => {
+const Message = ({ message, isStreaming, canRegenerate, onRetry, onRegenerate }: MessageProps) => {
   const isUser = message.role === "user"
   const isError = !isUser && message.status === "error"
   const showThinking =
@@ -43,6 +45,17 @@ const Message = ({ message, isStreaming, onRetry }: MessageProps) => {
                   disabled={isStreaming}
                 >
                   Retry
+                </button>
+              </div>
+            ) : null}
+            {canRegenerate ? (
+              <div className={styles.actions}>
+                <button
+                  type="button"
+                  onClick={() => onRegenerate(message.id)}
+                  disabled={isStreaming}
+                >
+                  Regenerate
                 </button>
               </div>
             ) : null}

@@ -18,6 +18,26 @@
   justify-content: flex-start;
 }
 
+.actions {
+  &:not(:first-child) {
+    margin-top: 8px;
+  }
+
+  button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: #fff;
+    cursor: pointer;
+    text-decoration: underline;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+}
+
 .error {
   color: #f0a8a8;
 

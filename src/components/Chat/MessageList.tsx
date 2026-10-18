@@ -9,9 +9,10 @@ interface MessageListProps {
   messages: MessageType[];
   isStreaming: boolean;
   onRetry: (id: string) => void;
+  onRegenerate: (id: string) => void;
 }
 
-const MessageList = ({ messages, isStreaming, onRetry }: MessageListProps) => {
+const MessageList = ({ messages, isStreaming, onRetry, onRegenerate }: MessageListProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowRef = useRef(true);
@@ -60,13 +61,25 @@ const MessageList = ({ messages, isStreaming, onRetry }: MessageListProps) => {
       className={styles['ml-container']}
       onScroll={handleScroll}
     >
-      {messages.map((message) => {
+      {messages.map((message, index) => {
+        const isLastAssistant =
+          message.role === "assistant" &&
+          messages.findLastIndex((item) => item.role === "assistant") === index;
+        const canRegenerate =
+          isLastAssistant &&
+          !isStreaming &&
+          (message.status === "complete" ||
+            message.status === "cancelled" ||
+            message.status === "error");
+
         return (
           <Message
             key={message.id}
             message={message}
             isStreaming={isStreaming}
+            canRegenerate={canRegenerate}
             onRetry={onRetry}
+            onRegenerate={onRegenerate}
           />
         )
       })}

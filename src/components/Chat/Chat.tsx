@@ -248,6 +248,7 @@ const Chat = () => {
           messages={messages}
           isStreaming={isThinking}
           onRetry={handleRetry}
+          onRegenerate={handleRetry}
         />
       ) : (
         <EmptyState />

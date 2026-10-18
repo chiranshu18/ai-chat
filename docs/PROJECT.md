@@ -165,7 +165,7 @@ The client is created at module load. A missing key is rejected in the API route
 - User bubbles are right-aligned plain text. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
 - Code fences render as default markdown `<pre><code>`. No syntax colors, no copy button.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
-- `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button instead.
+- `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
 - Colors are hardcoded dark (`#2f2f2f` page, `#212121` bubbles and composer). `globals.css` light/dark variables do not drive the chat.
 - `src/pages/index.tsx` imports `Geist` and `Geist_Mono` from `next/font/google` and never uses them. `globals.css` references `--font-geist-sans` / `--font-geist-mono`, which are never set. Body font is Arial; the header sets `font-family: Roboto` without loading that font.
 
@@ -350,14 +350,16 @@ Learn: request reconstruction, state management.
 - `src/components/Chat/Message.tsx` — button, only on the last assistant message. Pass a callback from `Chat` via `MessageList`.
 - `src/components/Chat/Chat.tsx` — slice messages to before that assistant id, then call the shared send helper. Do not append a second user message.
 
-**Connects to.** Uses the feature 1 helper and feature 2 error/status. No API change if the role map is done.
+**Connects to.** Uses the feature 1 helper and feature 2 error/status. No API change. Regenerate calls the same resend as Retry: drop that assistant message and call `streamAssistantReply` with the history above it.
+
+**Shipped.** The button is only on the latest assistant message. Retry stays on error messages, including older ones.
 
 **Done when.**
 
-- [ ] Regenerate replaces only the latest assistant message
-- [ ] Earlier turns stay intact and are included in the request
-- [ ] The control is hidden while a reply is streaming
-- [ ] Stop and error/retry still work on the new reply
+- [x] Regenerate replaces only the latest assistant message
+- [x] Earlier turns stay intact and are included in the request
+- [x] The control is hidden while a reply is streaming
+- [x] Stop and error/retry still work on the new reply
 
 ### 4. Edit and resend a user message
 
@@ -567,6 +569,7 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 0 is shipped. Keep the `assistant` → `model` map in `src/pages/api/chat.ts`.
 - Feature 1 is shipped. New sends and retries go through `streamAssistantReply` in `Chat.tsx`. Keep abort, id-targeted updates, `{ stream: true }`, and scroll anchoring.
 - Feature 2 is shipped. Failures set `status: "error"`. Do not treat abort as an error, and do not render `Thinking...` for an error message.
+- Feature 3 is shipped. Regenerate resends the history above the latest assistant message. Do not append a second user message.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.
