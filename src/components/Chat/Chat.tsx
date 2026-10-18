@@ -241,6 +241,25 @@ const Chat = () => {
     void streamAssistantReply(history);
   };
 
+  const handleEdit = (id: string, nextText: string) => {
+    if (isThinking) return;
+
+    const trimmed = nextText.trim();
+    if (!trimmed) return;
+
+    const index = messages.findIndex((message) => message.id === id);
+    if (index === -1 || messages[index].role !== "user") return;
+
+    const edited: Message = { ...messages[index], content: trimmed };
+    const history = withoutEmptyPlaceholders([
+      ...messages.slice(0, index),
+      edited,
+    ]);
+
+    setMessages(history);
+    void streamAssistantReply(history);
+  };
+
   return (
     <div className={styles["chat-container"]}>
       {messages.length ? (
@@ -249,6 +268,7 @@ const Chat = () => {
           isStreaming={isThinking}
           onRetry={handleRetry}
           onRegenerate={handleRetry}
+          onEdit={handleEdit}
         />
       ) : (
         <EmptyState />
