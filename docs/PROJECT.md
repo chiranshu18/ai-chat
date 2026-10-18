@@ -114,25 +114,26 @@ sequenceDiagram
 
 ### Client (`src/components/Chat/Chat.tsx`)
 
-`handleSendMessage`:
+`handleSendMessage` appends the user message and calls `streamAssistantReply(history)`. The history posted to `/api/chat` includes that user message and not the empty assistant placeholder. An assistant message with empty content is left out of the next request.
 
-1. Build a user `Message` (`uuid`, role `user`, trimmed-or-not: the input trims only for the empty check; the raw string is sent).
-2. `setMessages` to history plus that user message. `setIsthinking(true)`.
-3. Append an assistant `Message` with `content: ""`. `Message` renders that as the text `Thinking...`.
-4. `POST /api/chat` with JSON `{ messages: updatedMessages }`. `updatedMessages` is the history **plus the new user message, and not the empty assistant placeholder**.
-5. If `response.ok` is false, throw. If `response.body` has no reader, throw.
-6. Read the stream with `TextDecoder`. `decode(value)` is called without `{ stream: true }`, so a multi-byte character split across chunks can turn into the replacement character U+FFFD. Each chunk is logged with `console.log("chunk: ", chunk)`.
-7. The update copies the array, then mutates whichever message is last: `updatedMessages[updatedMessages.length - 1].content += chunk` when that item's role is `assistant`. It does not update by message id. The same object is returned inside a new array.
-8. `catch` only `console.error`s. `finally` sets `isThinking` to false.
+`streamAssistantReply`:
 
-There is no `AbortController`. A failed request leaves the empty assistant message in the list, so the bubble keeps saying `Thinking...` after `isThinking` is false.
+1. Bumps a request id and aborts any previous controller. Creates an `AbortController`, stores it on a ref, and passes `signal` to `fetch`.
+2. Appends an assistant `Message` with `content: ""`. `Message` renders that as `Thinking...` until text arrives.
+3. Reads the body with `TextDecoder`, calling `decode(value, { stream: true })`, then a final `decode()` to flush trailing bytes.
+4. Each chunk replaces the assistant message with that id. A new object is written into a copied array. If the id is gone, the chunk is ignored.
+5. `AbortError` is not logged. If that placeholder is still empty, it is removed. Partial text stays.
+6. Any other error is `console.error` only. The empty assistant message remains, so a failed request still looks like `Thinking...` after `isThinking` is false.
+7. `finally` sets `isThinking` to false only when the request id is still the latest one.
+
+Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts the in-flight controller.
 
 ### Composer (`src/components/Chat/ChatInput.tsx`)
 
 - Local `query` state. Placeholder `Ask anything!`. `rows={1}`. `resize: none` in SCSS.
 - Enter sends. Shift+Enter inserts a newline.
 - Send is ignored when `isThinking` is true or the trimmed query is empty.
-- The send icon gets `send-button-disabled` and a gray stroke while thinking. It is still the send icon, not a stop control.
+- While `isThinking`, the send icon is a stop button (`Square`) that calls `onStop`. Enter still does not send.
 - The query clears as soon as send is accepted, before the response arrives.
 
 ### API (`src/pages/api/chat.ts`)
@@ -160,7 +161,7 @@ The client is created at module load. A missing key fails on the first generatio
 - Empty `messages` shows `EmptyState`. Any length shows `MessageList`.
 - User bubbles are right-aligned plain text. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
 - Code fences render as default markdown `<pre><code>`. No syntax colors, no copy button.
-- `MessageList` smooth-scrolls to a bottom sentinel whenever `messages` changes, including every streamed chunk.
+- `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
 - `.thinking` in `src/components/Chat/message.module.scss` is a pulse animation and is not applied anywhere.
 - Colors are hardcoded dark (`#2f2f2f` page, `#212121` bubbles and composer). `globals.css` light/dark variables do not drive the chat.
 - `src/pages/index.tsx` imports `Geist` and `Geist_Mono` from `next/font/google` and never uses them. `globals.css` references `--font-geist-sans` / `--font-geist-mono`, which are never set. Body font is Arial; the header sets `font-family: Roboto` without loading that font.
@@ -170,13 +171,13 @@ The client is created at module load. A missing key fails on the first generatio
 These are bugs or missing seams. Each one names the roadmap item that should fix it. Do not "clean them up" in an unrelated change.
 
 1. **Gemini roles. Shipped in feature 0.** `src/pages/api/chat.ts` maps `assistant` to Gemini role `model` and anything else to `user`. Client messages stay `"assistant"`. Do not forward `message.role` unchanged.
-2. **Stream updates mutate the last message by index.** The loop copies the array, then does `lastMessage.content += chunk` on `updatedMessages[updatedMessages.length - 1]`. Replacing that object immutably is required for edit and persistence. The index is the sharper bug: after stop-then-send, regenerate, edit, or switching conversations, the last message is not reliably the one the in-flight request owns. The shared send helper must close over the assistant message `id`, replace that object, and drop the chunk if the id is no longer in the list. Fix this in feature 1.
-3. **UTF-8 split across chunks.** `decoder.decode(value)` does not pass `{ stream: true }`. A multi-byte character divided across reads becomes U+FFFD, so emoji and non-ASCII text corrupt intermittently. Fix this in feature 1, in the same loop. Remove the leftover `console.log("chunk: ", chunk)` there too.
+2. **Stream updates. Shipped in feature 1.** `appendChunk` in `Chat.tsx` replaces the assistant message with the id captured for that request. Do not write chunks onto the last index, and do not mutate `message.content` in place.
+3. **UTF-8. Shipped in feature 1.** The reader uses `decode(value, { stream: true })` and flushes with a final `decode()`. Do not drop `{ stream: true }`. There is no chunk `console.log`.
 4. **Errors look like thinking.** An empty assistant `content` always renders `Thinking...`, including after failure and after `isThinking` flips back to false. Feature 2 adds an explicit status so empty content is only the in-progress state.
-5. **No abort, retry, settings, storage, or conversation id.** Those are features 1, 2, 6, 7, and 11. The model string `gemini-3-flash-preview` stays hardcoded until feature 11. It is a preview id and can start 404ing; feature 2's error copy should say the model is unavailable rather than "Something went wrong".
+5. **No retry, settings, storage, or conversation id.** Abort shipped in feature 1. Retry, storage, sidebar, and settings are features 2, 6, 7, and 11. The model string `gemini-3-flash-preview` stays hardcoded until feature 11. It is a preview id and can start 404ing; feature 2's error copy should say the model is unavailable rather than "Something went wrong".
 6. **React Strict Mode is off.** Effects do not double-invoke in dev. Do not rely on that. If Strict Mode is turned on later, the send effect must tolerate a remount (abort on cleanup).
 7. **Streaming format stays plain text chunks.** Do not switch to SSE. Failures before the first byte stay a non-OK status plus a JSON `{ error }` body. Failures after headers are sent currently look like a successful short reply (see the API section). Feature 2 distinguishes that case with a trailing sentinel line. That sentinel is not a new streaming protocol.
-8. **Auto-scroll fights the reader.** `MessageList` calls `scrollIntoView({ behavior: "smooth" })` on every `messages` change, including every chunk. Scrolling up during a reply yanks the view back down. Fix this in feature 1.
+8. **Auto-scroll. Shipped in feature 1.** Follow the bottom on a new message. During a stream, stop following when `scrollTop` decreases, and resume within 80px of the bottom. Keep chunk scrolling on `behavior: "auto"`.
 
 ## Target data model
 
@@ -286,17 +287,19 @@ While a reply is streaming, the list auto-scrolls only if it is already near the
 - `src/components/Chat/ChatInput.tsx` — stop button while `isThinking`, calling a new `onStop` prop. Use a square/stop icon from `lucide-react`. Send stays disabled during thinking.
 - `src/components/Chat/MessageList.tsx` — near-bottom check before following the sentinel. Pass whether a reply is streaming so the behavior is `auto` during chunks and `smooth` on a new send.
 
-**Connects to.** Feature 2 must not treat abort as a failure banner. Feature 3 and 4 call the same helper, so they get stop, id-targeted updates, and the UTF-8 decode for free.
+**Connects to.** Feature 2 must not treat abort as a failure banner. Feature 3 and 4 call `streamAssistantReply`, so they get stop, id-targeted updates, and the UTF-8 decode for free.
+
+**Shipped.** Stop is a filled `Square` button. Abort removes an assistant placeholder that is still empty, so a stop before the first token does not leave `Thinking...`. Partial text stays. Unmount aborts the controller. A request id guard keeps a newer send from being cleared by the aborted request's `finally`.
 
 **Done when.**
 
-- [ ] Stop aborts the in-flight request and the UI becomes usable immediately
-- [ ] Partial text remains; no error banner on abort
-- [ ] A send started after stop is not overwritten by the aborted request
-- [ ] Chunks update the assistant message with that id, immutably, and a chunk whose id is gone is ignored
-- [ ] A multi-byte character split across chunks is not replaced with U+FFFD
-- [ ] The chunk `console.log` is gone
-- [ ] Scrolling up during a stream stays put, and a new send still brings the latest message into view
+- [x] Stop aborts the in-flight request and the UI becomes usable immediately
+- [x] Partial text remains; no error banner on abort
+- [x] A send started after stop is not overwritten by the aborted request
+- [x] Chunks update the assistant message with that id, immutably, and a chunk whose id is gone is ignored
+- [x] A multi-byte character split across chunks is not replaced with U+FFFD
+- [x] The chunk `console.log` is gone
+- [x] Scrolling up during a stream stays put, and a new send still brings the latest message into view
 
 ### 2. Error handling UX
 
@@ -557,7 +560,7 @@ Learn: environment variables, production concerns.
 The priority numbers above are the order to build. Three rules that override "do it as a drive-by":
 
 - Feature 0 is shipped. Keep the `assistant` → `model` map in `src/pages/api/chat.ts`.
-- Feature 1 owns the stream loop: abort, update by message id, `{ stream: true }`, and scroll anchoring.
+- Feature 1 is shipped. New sends go through `streamAssistantReply` in `Chat.tsx`. Keep abort, id-targeted updates, `{ stream: true }`, and scroll anchoring.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

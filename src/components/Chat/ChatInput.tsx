@@ -1,13 +1,14 @@
 import React, { useState } from 'react'
 import styles from "./chatInput.module.scss"
-import { SendHorizontal } from 'lucide-react'
+import { SendHorizontal, Square } from 'lucide-react'
 
 interface ChatInputProps {
   onMessageSend: (message: string) => void;
+  onStop: () => void;
   isThinking: boolean;
 }
 
-const ChatInput = ({ onMessageSend, isThinking }: ChatInputProps) => {
+const ChatInput = ({ onMessageSend, onStop, isThinking }: ChatInputProps) => {
   const [query, setQuery] = useState('');
 
   const handleSend = () => {
@@ -35,7 +36,25 @@ const ChatInput = ({ onMessageSend, isThinking }: ChatInputProps) => {
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <SendHorizontal className={`${styles["send-button"]} ${isThinking ? styles["send-button-disabled"] : ""}`} onClick={handleSend} color={isThinking ? 'gray' : 'white'} />
+      {isThinking ? (
+        <button
+          type="button"
+          className={styles["send-button"]}
+          onClick={onStop}
+          aria-label="Stop generating"
+        >
+          <Square size={16} fill="currentColor" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={styles["send-button"]}
+          onClick={handleSend}
+          aria-label="Send message"
+        >
+          <SendHorizontal />
+        </button>
+      )}
     </div>
   )
 }
