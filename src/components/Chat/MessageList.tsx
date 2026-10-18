@@ -10,9 +10,10 @@ interface MessageListProps {
   isStreaming: boolean;
   onRetry: (id: string) => void;
   onRegenerate: (id: string) => void;
+  onEdit: (id: string, nextText: string) => void;
 }
 
-const MessageList = ({ messages, isStreaming, onRetry, onRegenerate }: MessageListProps) => {
+const MessageList = ({ messages, isStreaming, onRetry, onRegenerate, onEdit }: MessageListProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowRef = useRef(true);
@@ -80,6 +81,7 @@ const MessageList = ({ messages, isStreaming, onRetry, onRegenerate }: MessageLi
             canRegenerate={canRegenerate}
             onRetry={onRetry}
             onRegenerate={onRegenerate}
+            onEdit={onEdit}
           />
         )
       })}

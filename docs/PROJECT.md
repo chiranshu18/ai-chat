@@ -162,7 +162,7 @@ The client is created at module load. A missing key is rejected in the API route
 ## UI behavior today
 
 - Empty `messages` shows `EmptyState`. Any length shows `MessageList`.
-- User bubbles are right-aligned plain text. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
+- User bubbles are right-aligned plain text, with Edit when nothing is streaming. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
 - Code fences render as default markdown `<pre><code>`. No syntax colors, no copy button.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
 - `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
@@ -374,12 +374,14 @@ Learn: message manipulation.
 
 **Connects to.** Same truncation rule feature 7's per-conversation messages will use. Do not edit messages in other conversations; there is only one list until feature 7.
 
+**Shipped.** Save stores the trimmed text on the same message id, drops the tail, and calls `streamAssistantReply`. Escape cancels. Save stays disabled when the trimmed draft is empty.
+
 **Done when.**
 
-- [ ] Save rewrites that user message, drops later messages, and streams a new reply
-- [ ] Cancel leaves the transcript unchanged
-- [ ] Empty trimmed text cannot be saved
-- [ ] Edit controls are unavailable while streaming
+- [x] Save rewrites that user message, drops later messages, and streams a new reply
+- [x] Cancel leaves the transcript unchanged
+- [x] Empty trimmed text cannot be saved
+- [x] Edit controls are unavailable while streaming
 
 ### 5. New chat / reset conversation
 
@@ -570,6 +572,7 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 1 is shipped. New sends and retries go through `streamAssistantReply` in `Chat.tsx`. Keep abort, id-targeted updates, `{ stream: true }`, and scroll anchoring.
 - Feature 2 is shipped. Failures set `status: "error"`. Do not treat abort as an error, and do not render `Thinking...` for an error message.
 - Feature 3 is shipped. Regenerate resends the history above the latest assistant message. Do not append a second user message.
+- Feature 4 is shipped. Editing a user message keeps that id, drops every message after it, and resends. Do not send an empty trimmed edit.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

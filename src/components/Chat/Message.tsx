@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -10,10 +11,20 @@ interface MessageProps {
   canRegenerate: boolean
   onRetry: (id: string) => void
   onRegenerate: (id: string) => void
+  onEdit: (id: string, nextText: string) => void
 }
 
-const Message = ({ message, isStreaming, canRegenerate, onRetry, onRegenerate }: MessageProps) => {
+const Message = ({
+  message,
+  isStreaming,
+  canRegenerate,
+  onRetry,
+  onRegenerate,
+  onEdit,
+}: MessageProps) => {
   const isUser = message.role === "user"
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(message.content)
   const isError = !isUser && message.status === "error"
   const showThinking =
     !isUser &&
@@ -21,14 +32,72 @@ const Message = ({ message, isStreaming, canRegenerate, onRetry, onRegenerate }:
     message.status !== "error" &&
     message.status !== "complete" &&
     message.status !== "cancelled"
+  const canEdit = isUser && !isStreaming && !isEditing
+
+  useEffect(() => {
+    if (!isStreaming) return
+    setIsEditing(false)
+    setDraft(message.content)
+  }, [isStreaming, message.content])
+
+  const startEdit = () => {
+    if (isStreaming) return
+    setDraft(message.content)
+    setIsEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setDraft(message.content)
+    setIsEditing(false)
+  }
+
+  const saveEdit = () => {
+    const nextText = draft.trim()
+    if (!nextText || isStreaming) return
+    onEdit(message.id, nextText)
+    setIsEditing(false)
+  }
 
   return (
     <div className={`${styles['msg-container']} ${isUser ? styles['msg-user'] : styles['msg-assistant']}`}>
-      <div className={`${styles['msg-wrapper']} ${showThinking ? styles.thinking : ""}`}>
+      <div className={`${styles['msg-wrapper']} ${showThinking ? styles.thinking : ""} ${isEditing ? styles.editing : ""}`}>
         {showThinking ? (
           "Thinking..."
+        ) : isEditing ? (
+          <>
+            <textarea
+              className={styles['edit-input']}
+              value={draft}
+              rows={3}
+              aria-label="Edit message"
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  cancelEdit()
+                }
+              }}
+            />
+            <div className={styles.actions}>
+              <button type="button" onClick={saveEdit} disabled={!draft.trim()}>
+                Save
+              </button>
+              <button type="button" onClick={cancelEdit}>
+                Cancel
+              </button>
+            </div>
+          </>
         ) : isUser ? (
-          message.content
+          <>
+            {message.content}
+            {canEdit ? (
+              <div className={styles.actions}>
+                <button type="button" onClick={startEdit}>
+                  Edit
+                </button>
+              </div>
+            ) : null}
+          </>
         ) : (
           <>
             {message.content ? (
