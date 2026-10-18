@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { gemini } from "@/lib/gemini";
+import { toPublicError } from "@/lib/publicError";
+import { STREAM_ERROR_MARKER } from "@/lib/streamMarker";
 
 export default async function handler(
   req: NextApiRequest,
@@ -17,6 +19,12 @@ export default async function handler(
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
         error: "Messages are required",
+      });
+    }
+
+    if (!process.env.GEMINI_API_KEY?.trim()) {
+      return res.status(500).json({
+        error: "API key is not configured",
       });
     }
 
@@ -49,10 +57,11 @@ export default async function handler(
 
     if (!res.headersSent) {
       return res.status(500).json({
-        error: "Something went wrong",
+        error: toPublicError(error),
       });
     }
 
+    res.write(STREAM_ERROR_MARKER);
     res.end();
   }
 }

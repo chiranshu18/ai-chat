@@ -65,6 +65,8 @@ src/
     Chat/EmptyState.tsx    "Hi, How can I help you today?"
   hooks/                   Empty. No hooks yet.
   lib/gemini.ts            GoogleGenAI client.
+  lib/publicError.ts       Maps provider failures to safe sentences.
+  lib/streamMarker.ts      Trailing stream-error marker shared by API and client.
   types/chat.ts            Message type.
   styles/globals.css       Tailwind import + unused light/dark CSS variables.
 ```
@@ -119,12 +121,12 @@ sequenceDiagram
 `streamAssistantReply`:
 
 1. Bumps a request id and aborts any previous controller. Creates an `AbortController`, stores it on a ref, and passes `signal` to `fetch`.
-2. Appends an assistant `Message` with `content: ""`. `Message` renders that as `Thinking...` until text arrives.
-3. Reads the body with `TextDecoder`, calling `decode(value, { stream: true })`, then a final `decode()` to flush trailing bytes.
+2. Appends an assistant `Message` with `content: ""` and `status: "streaming"`. `Message` renders that as `Thinking...` until text arrives.
+3. Reads the body with `TextDecoder`, calling `decode(value, { stream: true })`, then a final `decode()` to flush trailing bytes. A trailing `\n[[ai-chat:error]]` is stripped and never shown.
 4. Each chunk replaces the assistant message with that id. A new object is written into a copied array. If the id is gone, the chunk is ignored.
-5. `AbortError` is not logged. If that placeholder is still empty, it is removed. Partial text stays.
-6. Any other error is `console.error` only. The empty assistant message remains, so a failed request still looks like `Thinking...` after `isThinking` is false.
-7. `finally` sets `isThinking` to false only when the request id is still the latest one.
+5. `AbortError` is not an error. If that placeholder is still empty, it is removed. Partial text stays with `status: "cancelled"`.
+6. Any other failure sets `status: "error"` and a short `error` string on that assistant message, and keeps partial text. `Thinking...` is only the empty streaming state.
+7. `finally` sets `isThinking` to false only when the request id is still the latest one. Retry deletes that assistant message and calls `streamAssistantReply` with the history above it.
 
 Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts the in-flight controller.
 
@@ -143,8 +145,9 @@ Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts 
 - Otherwise `gemini.models.generateContentStream` with model `gemini-3-flash-preview`.
 - Each client message is mapped to `{ role, parts: [{ text: message.content }] }`. `assistant` is sent as Gemini role `model`. Any other role is sent as `user`. Client state still stores `assistant`.
 - Response headers: `200`, `Content-Type: text/plain; charset=utf-8`, chunked. Each `chunk.text` is written raw. No SSE framing, no JSON lines.
-- On throw: log `Gemini API error`. If headers are not sent, `500` `{ error: "Something went wrong" }` for every failure. A missing key, a quota error, and a retired model id are indistinguishable to the client, and the body never includes the underlying reason.
-- If the throw happens after `writeHead`, the handler calls `res.end()` with no error marker. The client sees a normal end of stream, so a truncated reply looks complete.
+- A missing `GEMINI_API_KEY` returns `500` `{ error: "API key is not configured" }` before calling Gemini.
+- On throw: log the original error on the server only. If headers are not sent, `500` with one of: `This model is unavailable` (404 / not found), `Rate limit reached. Try again in a moment.` (429 / quota), or `Something went wrong`. The body never includes the provider payload or the key.
+- If the throw happens after `writeHead`, the handler writes `\n[[ai-chat:error]]` and ends. The client strips that suffix, keeps any partial text, and shows `Something went wrong`.
 
 ### Gemini client (`src/lib/gemini.ts`)
 
@@ -154,7 +157,7 @@ export const gemini = new GoogleGenAI({
 });
 ```
 
-The client is created at module load. A missing key fails on the first generation, not at import time in a way the UI explains.
+The client is created at module load. A missing key is rejected in the API route before Gemini is called, and the chat shows `API key is not configured`.
 
 ## UI behavior today
 
@@ -162,7 +165,7 @@ The client is created at module load. A missing key fails on the first generatio
 - User bubbles are right-aligned plain text. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
 - Code fences render as default markdown `<pre><code>`. No syntax colors, no copy button.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
-- `.thinking` in `src/components/Chat/message.module.scss` is a pulse animation and is not applied anywhere.
+- `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button instead.
 - Colors are hardcoded dark (`#2f2f2f` page, `#212121` bubbles and composer). `globals.css` light/dark variables do not drive the chat.
 - `src/pages/index.tsx` imports `Geist` and `Geist_Mono` from `next/font/google` and never uses them. `globals.css` references `--font-geist-sans` / `--font-geist-mono`, which are never set. Body font is Arial; the header sets `font-family: Roboto` without loading that font.
 
@@ -173,10 +176,10 @@ These are bugs or missing seams. Each one names the roadmap item that should fix
 1. **Gemini roles. Shipped in feature 0.** `src/pages/api/chat.ts` maps `assistant` to Gemini role `model` and anything else to `user`. Client messages stay `"assistant"`. Do not forward `message.role` unchanged.
 2. **Stream updates. Shipped in feature 1.** `appendChunk` in `Chat.tsx` replaces the assistant message with the id captured for that request. Do not write chunks onto the last index, and do not mutate `message.content` in place.
 3. **UTF-8. Shipped in feature 1.** The reader uses `decode(value, { stream: true })` and flushes with a final `decode()`. Do not drop `{ stream: true }`. There is no chunk `console.log`.
-4. **Errors look like thinking.** An empty assistant `content` always renders `Thinking...`, including after failure and after `isThinking` flips back to false. Feature 2 adds an explicit status so empty content is only the in-progress state.
-5. **No retry, settings, storage, or conversation id.** Abort shipped in feature 1. Retry, storage, sidebar, and settings are features 2, 6, 7, and 11. The model string `gemini-3-flash-preview` stays hardcoded until feature 11. It is a preview id and can start 404ing; feature 2's error copy should say the model is unavailable rather than "Something went wrong".
+4. **Error status. Shipped in feature 2.** `Thinking...` is only an empty message that is still `streaming` (or has no status). `status: "error"` shows `message.error` and Retry. Do not infer failure from an empty string.
+5. **No settings, storage, or conversation id.** Abort shipped in feature 1. Retry shipped in feature 2. Storage, sidebar, and settings are features 6, 7, and 11. The model string `gemini-3-flash-preview` stays hardcoded until feature 11. A not-found response already surfaces as `This model is unavailable`.
 6. **React Strict Mode is off.** Effects do not double-invoke in dev. Do not rely on that. If Strict Mode is turned on later, the send effect must tolerate a remount (abort on cleanup).
-7. **Streaming format stays plain text chunks.** Do not switch to SSE. Failures before the first byte stay a non-OK status plus a JSON `{ error }` body. Failures after headers are sent currently look like a successful short reply (see the API section). Feature 2 distinguishes that case with a trailing sentinel line. That sentinel is not a new streaming protocol.
+7. **Streaming format stays plain text chunks. Shipped sentinel in feature 2.** Do not switch to SSE. Failures before the first byte stay a non-OK status plus a JSON `{ error }` body. Failures after headers are sent append `\n[[ai-chat:error]]`. The client strips that exact suffix. Do not show it, and do not treat a stream that ends without it as an error.
 8. **Auto-scroll. Shipped in feature 1.** Follow the bottom on a new message. During a stream, stop following when `scrollTop` decreases, and resume within 80px of the bottom. Keep chunk scrolling on `behavior: "auto"`.
 
 ## Target data model
@@ -323,16 +326,18 @@ If the failure happens after headers are sent, write the exact suffix `\n[[ai-ch
 - `src/components/Chat/Message.tsx` — render error + Retry only when `status === "error"`. Render `Thinking...` only when content is empty and status is streaming (or content is empty and there is no error). Wire the unused `.thinking` class if it still matches the look.
 - `src/pages/api/chat.ts` — the error map above, and the sentinel write in the `headersSent` branch. The role map is feature 0; do not redo it here.
 
-**Connects to.** Feature 0 has already made the second turn valid. Feature 3's regenerate is almost the same call as Retry. Feature 11's preview model id depends on the "model unavailable" copy.
+**Connects to.** Feature 0 has already made the second turn valid. Feature 3's regenerate is almost the same call as Retry. Feature 11's preview model id already surfaces as `This model is unavailable`.
+
+**Shipped.** `Message.status` and `Message.error` are on the client type. `Conversation` is still not added. Retry calls `streamAssistantReply` with the messages above the failed assistant. The marker is shared as `STREAM_ERROR_MARKER` in `src/lib/streamMarker.ts`.
 
 **Done when.**
 
-- [ ] Failed requests show an error on that assistant message and a Retry control
-- [ ] Abort does not show that error
-- [ ] A failure after the first chunk keeps the partial text, shows the error, and does not leave the marker visible
-- [ ] Missing key, retired model, and quota show the three distinct messages above
-- [ ] The client still does not receive the raw provider error
-- [ ] Retry produces a new assistant reply without duplicating the user message
+- [x] Failed requests show an error on that assistant message and a Retry control
+- [x] Abort does not show that error
+- [x] A failure after the first chunk keeps the partial text, shows the error, and does not leave the marker visible
+- [x] Missing key, retired model, and quota show the three distinct messages above
+- [x] The client still does not receive the raw provider error
+- [x] Retry produces a new assistant reply without duplicating the user message
 
 ### 3. Regenerate response
 
@@ -560,7 +565,8 @@ Learn: environment variables, production concerns.
 The priority numbers above are the order to build. Three rules that override "do it as a drive-by":
 
 - Feature 0 is shipped. Keep the `assistant` → `model` map in `src/pages/api/chat.ts`.
-- Feature 1 is shipped. New sends go through `streamAssistantReply` in `Chat.tsx`. Keep abort, id-targeted updates, `{ stream: true }`, and scroll anchoring.
+- Feature 1 is shipped. New sends and retries go through `streamAssistantReply` in `Chat.tsx`. Keep abort, id-targeted updates, `{ stream: true }`, and scroll anchoring.
+- Feature 2 is shipped. Failures set `status: "error"`. Do not treat abort as an error, and do not render `Thinking...` for an error message.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

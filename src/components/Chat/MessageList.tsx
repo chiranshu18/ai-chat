@@ -8,9 +8,10 @@ const NEAR_BOTTOM_PX = 80;
 interface MessageListProps {
   messages: MessageType[];
   isStreaming: boolean;
+  onRetry: (id: string) => void;
 }
 
-const MessageList = ({ messages, isStreaming }: MessageListProps) => {
+const MessageList = ({ messages, isStreaming, onRetry }: MessageListProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowRef = useRef(true);
@@ -61,7 +62,12 @@ const MessageList = ({ messages, isStreaming }: MessageListProps) => {
     >
       {messages.map((message) => {
         return (
-          <Message key={message.id} message={message} />
+          <Message
+            key={message.id}
+            message={message}
+            isStreaming={isStreaming}
+            onRetry={onRetry}
+          />
         )
       })}
       <div ref={messageEndRef} />
