@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useRef } from "react";
 import Header from "@/components/Layout/Header"
 import Chat from "@/components/Chat/Chat"
 import styles from "./styles.module.scss"
 
 
 export default function Home() {
-  const [resetKey, setResetKey] = useState(0);
+  const newChatRef = useRef<() => void>(() => {});
 
   return (
     <div className={styles['page-container']}>
-      <Header onNewChat={() => setResetKey((key) => key + 1)} />
-      <Chat key={resetKey} />
+      <Header onNewChat={() => newChatRef.current()} />
+      <Chat onRegisterNewChat={(newChat) => {
+        newChatRef.current = newChat;
+      }} />
     </div>
   );
 }

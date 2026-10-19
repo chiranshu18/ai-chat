@@ -6,8 +6,14 @@ import EmptyState from "./EmptyState"
 import ChatInput from "./ChatInput"
 
 import styles from "./Chat.module.scss"
-import { Message } from "@/types/chat"
+import { ChatStore, Conversation, Message, NEW_CHAT_TITLE } from "@/types/chat"
 import { consumeStreamText } from "@/lib/streamMarker"
+import {
+  createConversation,
+  loadStore,
+  saveStore,
+  titleFromMessage,
+} from "@/lib/storage"
 
 const GENERIC_ERROR = "Something went wrong";
 
@@ -56,6 +62,48 @@ function withoutEmptyPlaceholders(messages: Message[]): Message[] {
   );
 }
 
+function updateConversation(
+  store: ChatStore,
+  conversationId: string,
+  updater: (conversation: Conversation) => Conversation
+): ChatStore {
+  let changed = false;
+  const conversations = store.conversations.map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+    const next = updater(conversation);
+    if (next === conversation) return conversation;
+    changed = true;
+    return next;
+  });
+
+  if (!changed) return store;
+  return { ...store, conversations };
+}
+
+function mapConversationMessages(
+  store: ChatStore,
+  conversationId: string,
+  mapper: (messages: Message[]) => Message[]
+): ChatStore {
+  let changed = false;
+  const conversations = store.conversations.map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+
+    const messages = mapper(conversation.messages);
+    if (messages === conversation.messages) return conversation;
+
+    changed = true;
+    return { ...conversation, messages, updatedAt: Date.now() };
+  });
+
+  if (!changed) return store;
+  return { ...store, conversations };
+}
+
+interface ChatProps {
+  onRegisterNewChat: (newChat: () => void) => void
+}
+
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const body: unknown = await response.json();
@@ -75,11 +123,27 @@ async function readErrorMessage(response: Response): Promise<string> {
   return GENERIC_ERROR;
 }
 
-const Chat = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+const Chat = ({ onRegisterNewChat }: ChatProps) => {
+  const [store, setStore] = useState<ChatStore | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
+  const onRegisterNewChatRef = useRef(onRegisterNewChat);
+  const handleNewChatRef = useRef<() => void>(() => {});
+
+  const active = store?.conversations.find(
+    (conversation) => conversation.id === store.activeId
+  );
+  const messages = active?.messages ?? [];
+
+  useEffect(() => {
+    setStore(loadStore());
+  }, []);
+
+  useEffect(() => {
+    if (!store) return;
+    saveStore(store);
+  }, [store]);
 
   useEffect(() => {
     return () => {
@@ -87,7 +151,15 @@ const Chat = () => {
     };
   }, []);
 
-  const streamAssistantReply = async (history: Message[]) => {
+  useEffect(() => {
+    onRegisterNewChatRef.current = onRegisterNewChat;
+  }, [onRegisterNewChat]);
+
+  useEffect(() => {
+    onRegisterNewChatRef.current(() => handleNewChatRef.current());
+  }, []);
+
+  const streamAssistantReply = async (history: Message[], conversationId: string) => {
     const requestId = ++requestIdRef.current;
     abortRef.current?.abort();
 
@@ -106,7 +178,12 @@ const Chat = () => {
 
     const pushText = (text: string) => {
       if (!text) return;
-      setMessages((prev) => appendChunk(prev, assistantId, text));
+      setStore((prev) => {
+        if (!prev) return prev;
+        return mapConversationMessages(prev, conversationId, (current) =>
+          appendChunk(current, assistantId, text)
+        );
+      });
     };
 
     const consume = (chunk: string) => {
@@ -119,16 +196,25 @@ const Chat = () => {
       if (next.failed) {
         failed = true;
         held = "";
-        setMessages((prev) =>
-          updateMessage(prev, assistantId, {
-            status: "error",
-            error: GENERIC_ERROR,
-          })
-        );
+        setStore((prev) => {
+          if (!prev) return prev;
+          return mapConversationMessages(prev, conversationId, (current) =>
+            updateMessage(current, assistantId, {
+              status: "error",
+              error: GENERIC_ERROR,
+            })
+          );
+        });
       }
     };
 
-    setMessages((prev) => [...prev, assistantMessage]);
+    setStore((prev) => {
+      if (!prev) return prev;
+      return mapConversationMessages(prev, conversationId, (current) => [
+        ...current,
+        assistantMessage,
+      ]);
+    });
     setIsThinking(true);
 
     try {
@@ -171,24 +257,35 @@ const Chat = () => {
       }
 
       if (!failed) {
-        setMessages((prev) =>
-          updateMessage(prev, assistantId, { status: "complete" })
-        );
+        setStore((prev) => {
+          if (!prev) return prev;
+          return mapConversationMessages(prev, conversationId, (current) =>
+            updateMessage(current, assistantId, { status: "complete" })
+          );
+        });
       }
     } catch (error) {
       if (isAbortError(error)) {
         if (held) {
           const pending = held;
           held = "";
-          setMessages((prev) => appendChunk(prev, assistantId, pending));
+          setStore((prev) => {
+            if (!prev) return prev;
+            return mapConversationMessages(prev, conversationId, (current) =>
+              appendChunk(current, assistantId, pending)
+            );
+          });
         }
 
-        setMessages((prev) => {
-          const message = prev.find((item) => item.id === assistantId);
-          if (!message || message.content === "") {
-            return prev.filter((item) => item.id !== assistantId);
-          }
-          return updateMessage(prev, assistantId, { status: "cancelled" });
+        setStore((prev) => {
+          if (!prev) return prev;
+          return mapConversationMessages(prev, conversationId, (current) => {
+            const message = current.find((item) => item.id === assistantId);
+            if (!message || message.content === "") {
+              return current.filter((item) => item.id !== assistantId);
+            }
+            return updateMessage(current, assistantId, { status: "cancelled" });
+          });
         });
         return;
       }
@@ -196,12 +293,15 @@ const Chat = () => {
       const publicMessage =
         error instanceof ResponseError ? error.publicMessage : GENERIC_ERROR;
 
-      setMessages((prev) =>
-        updateMessage(prev, assistantId, {
-          status: "error",
-          error: publicMessage,
-        })
-      );
+      setStore((prev) => {
+        if (!prev) return prev;
+        return mapConversationMessages(prev, conversationId, (current) =>
+          updateMessage(current, assistantId, {
+            status: "error",
+            error: publicMessage,
+          })
+        );
+      });
       console.error("Chat error:", error);
     } finally {
       if (requestIdRef.current === requestId) {
@@ -214,16 +314,45 @@ const Chat = () => {
   };
 
   const handleSendMessage = (text: string) => {
+    if (!active) return;
+
+    const conversationId = active.id;
     const userMessage: Message = {
       id: uuid(),
       role: "user",
       content: text,
     };
-    const nextMessages = [...messages, userMessage];
+    const history = withoutEmptyPlaceholders([...active.messages, userMessage]);
 
-    setMessages(nextMessages);
-    void streamAssistantReply(withoutEmptyPlaceholders(nextMessages));
+    setStore((prev) => {
+      if (!prev) return prev;
+      return updateConversation(prev, conversationId, (conversation) => ({
+        ...conversation,
+        title:
+          conversation.title === NEW_CHAT_TITLE
+            ? titleFromMessage(userMessage.content)
+            : conversation.title,
+        messages: [...conversation.messages, userMessage],
+        updatedAt: Date.now(),
+      }));
+    });
+    void streamAssistantReply(history, conversationId);
   };
+
+  const handleNewChat = () => {
+    abortRef.current?.abort();
+    setIsThinking(false);
+    setStore((prev) => {
+      if (!prev) return prev;
+      const conversation = createConversation();
+      return {
+        activeId: conversation.id,
+        conversations: [conversation, ...prev.conversations],
+      };
+    });
+  };
+
+  handleNewChatRef.current = handleNewChat;
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -231,22 +360,31 @@ const Chat = () => {
   };
 
   const handleRetry = (assistantId: string) => {
-    if (isThinking) return;
+    if (isThinking || !active) return;
 
+    const conversationId = active.id;
     const index = messages.findIndex((message) => message.id === assistantId);
     if (index === -1) return;
 
     const history = withoutEmptyPlaceholders(messages.slice(0, index));
-    setMessages(history);
-    void streamAssistantReply(history);
+    setStore((prev) => {
+      if (!prev) return prev;
+      return updateConversation(prev, conversationId, (conversation) => ({
+        ...conversation,
+        messages: history,
+        updatedAt: Date.now(),
+      }));
+    });
+    void streamAssistantReply(history, conversationId);
   };
 
   const handleEdit = (id: string, nextText: string) => {
-    if (isThinking) return;
+    if (isThinking || !active) return;
 
     const trimmed = nextText.trim();
     if (!trimmed) return;
 
+    const conversationId = active.id;
     const index = messages.findIndex((message) => message.id === id);
     if (index === -1 || messages[index].role !== "user") return;
 
@@ -256,13 +394,20 @@ const Chat = () => {
       edited,
     ]);
 
-    setMessages(history);
-    void streamAssistantReply(history);
+    setStore((prev) => {
+      if (!prev) return prev;
+      return updateConversation(prev, conversationId, (conversation) => ({
+        ...conversation,
+        messages: history,
+        updatedAt: Date.now(),
+      }));
+    });
+    void streamAssistantReply(history, conversationId);
   };
 
   return (
     <div className={styles["chat-container"]}>
-      {messages.length ? (
+      {store && messages.length ? (
         <MessageList
           messages={messages}
           isStreaming={isThinking}
@@ -270,14 +415,17 @@ const Chat = () => {
           onRegenerate={handleRetry}
           onEdit={handleEdit}
         />
-      ) : (
+      ) : store ? (
         <EmptyState />
-      )}
-      <ChatInput
-        onMessageSend={handleSendMessage}
-        onStop={handleStop}
-        isThinking={isThinking}
-      />
+      ) : null}
+      {active ? (
+        <ChatInput
+          key={active.id}
+          onMessageSend={handleSendMessage}
+          onStop={handleStop}
+          isThinking={isThinking}
+        />
+      ) : null}
     </div>
   )
 }

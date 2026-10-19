@@ -69,6 +69,7 @@ const MessageList = ({ messages, isStreaming, onRetry, onRegenerate, onEdit }: M
         const canRegenerate =
           isLastAssistant &&
           !isStreaming &&
+          message.content !== "" &&
           (message.status === "complete" ||
             message.status === "cancelled" ||
             message.status === "error");
