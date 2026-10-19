@@ -1,10 +1,16 @@
-import React from 'react'
 import styles from "./header.module.scss"
 
-const Header = () => {
+interface HeaderProps {
+  onNewChat: () => void
+}
+
+const Header = ({ onNewChat }: HeaderProps) => {
   return (
     <div className={styles['header-container']}>
-      ChatGpt
+      <span>ChatGpt</span>
+      <button type="button" onClick={onNewChat}>
+        New chat
+      </button>
     </div>
   )
 }

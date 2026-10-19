@@ -49,7 +49,7 @@ There is no README, no `.env.example`, and no test suite.
 ```
 src/
   pages/
-    index.tsx              Home: Header + Chat. Unused Geist font imports.
+    index.tsx              Home: Header + Chat. New chat bumps `resetKey` and remounts Chat.
     _app.tsx               Imports globals.css only.
     _document.tsx          lang="en", antialiased body.
     styles.module.scss     Full-viewport dark page (#2f2f2f).
@@ -57,7 +57,7 @@ src/
       chat.ts              POST streaming chat. The only real API.
       hello.ts             Unused Next boilerplate. Safe to delete.
   components/
-    Layout/Header.tsx      Fixed 54px bar. Label "ChatGpt". No actions.
+    Layout/Header.tsx      Fixed 54px bar. Label "ChatGpt". New chat button.
     Chat/Chat.tsx          State, send, stream reader.
     Chat/ChatInput.tsx     Textarea + send icon.
     Chat/MessageList.tsx   Scrolls to the latest message.
@@ -128,7 +128,7 @@ sequenceDiagram
 6. Any other failure sets `status: "error"` and a short `error` string on that assistant message, and keeps partial text. `Thinking...` is only the empty streaming state.
 7. `finally` sets `isThinking` to false only when the request id is still the latest one. Retry deletes that assistant message and calls `streamAssistantReply` with the history above it.
 
-Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts the in-flight controller.
+Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts the in-flight controller. New chat increments `resetKey` in `src/pages/index.tsx` and remounts `Chat`, which clears the transcript and the composer.
 
 ### Composer (`src/components/Chat/ChatInput.tsx`)
 
@@ -398,11 +398,13 @@ Learn: conversation lifecycle.
 
 **Connects to.** Feature 6 treats New chat as "append a `Conversation` and select it" instead of remounting. Swap the handler body then. Do not introduce the store in this feature.
 
+**Shipped.** `Header` stays a sibling of `Chat` and only receives `onNewChat`. The page holds `resetKey`. Abort-on-unmount was already in `Chat` from feature 1.
+
 **Done when.**
 
-- [ ] New chat shows the empty state and an empty composer
-- [ ] An in-flight reply is aborted and does not reappear
-- [ ] Sending after reset starts a fresh history with no previous turns in the POST body
+- [x] New chat shows the empty state and an empty composer
+- [x] An in-flight reply is aborted and does not reappear
+- [x] Sending after reset starts a fresh history with no previous turns in the POST body
 
 ### 6. Chat persistence
 
@@ -573,6 +575,7 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 2 is shipped. Failures set `status: "error"`. Do not treat abort as an error, and do not render `Thinking...` for an error message.
 - Feature 3 is shipped. Regenerate resends the history above the latest assistant message. Do not append a second user message.
 - Feature 4 is shipped. Editing a user message keeps that id, drops every message after it, and resends. Do not send an empty trimmed edit.
+- Feature 5 is shipped. New chat remounts `Chat` with `resetKey`. Do not render `Header` inside `Chat`. Feature 6 replaces the remount with a new stored conversation.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.
