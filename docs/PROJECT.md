@@ -62,7 +62,8 @@ src/
     Chat/Chat.tsx          State, send, stream reader.
     Chat/ChatInput.tsx     Textarea + send icon.
     Chat/MessageList.tsx   Scrolls to the latest message.
-    Chat/Message.tsx       User text or assistant markdown.
+    Chat/Message.tsx       User text or assistant markdown. Memoized on id, content, and status.
+    Chat/CodeBlock.tsx     Fenced code wrapper. Prism highlight, or plain pre.
     Chat/EmptyState.tsx    "Hi, How can I help you today?"
   hooks/                   Empty. No hooks yet.
   lib/gemini.ts            GoogleGenAI client.
@@ -165,7 +166,7 @@ The client is created at module load. A missing key is rejected in the API route
 
 - Empty `messages` shows `EmptyState`. Any length shows `MessageList`.
 - User bubbles are right-aligned plain text, with Edit when nothing is streaming. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
-- Code fences render as default markdown `<pre><code>`. No syntax colors, no copy button.
+- Fenced code in assistant messages is highlighted with Prism (`react-syntax-highlighter`, `oneDark`) when the language tag is one Prism knows, including aliases such as `js` and `ts`. A missing or unknown language stays plain preformatted text inside the same `CodeBlock` wrapper. Inline code stays inline. User messages stay plain text. `Message` skips re-rendering when its id, content, status, error, streaming flag, and regenerate flag are unchanged, so a chunk does not redraw earlier bubbles. `CodeBlock` skips re-highlighting when its source and language are unchanged.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
 - `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
 - Colors are hardcoded dark (`#2f2f2f` page, `#212121` bubbles and composer). `globals.css` light/dark variables do not drive the chat.
@@ -473,14 +474,16 @@ Learn: markdown customization.
 
 **Connects to.** Feature 9 puts the copy button on the same code block wrapper. Build the wrapper in this feature so feature 9 only adds the button.
 
+**Shipped.** `CodeBlock` is the wrapper. It receives the raw fence text and the language tag. Feature 9 should add the copy button there and write that raw string, not the highlighted DOM. Prism's `oneDark` theme is the only highlighter. The `Message` compare also includes `error`, `isStreaming`, and `canRegenerate` so Edit and Regenerate appear when a stream ends; a chunk still does not re-render earlier bubbles.
+
 **Done when.**
 
-- [ ] A fenced block with a language tag is highlighted
-- [ ] A fence without a language still renders as code
-- [ ] Inline code is not rendered as a block
-- [ ] Streaming markdown does not crash on an unclosed fence (partial blocks may be unstyled until the fence closes; that is acceptable)
-- [ ] Earlier messages do not re-render when a later message's content streams
-- [ ] An unchanged code block is not re-highlighted on later tokens
+- [x] A fenced block with a language tag is highlighted
+- [x] A fence without a language still renders as code
+- [x] Inline code is not rendered as a block
+- [x] Streaming markdown does not crash on an unclosed fence (partial blocks may be unstyled until the fence closes; that is acceptable)
+- [x] Earlier messages do not re-render when a later message's content streams
+- [x] An unchanged code block is not re-highlighted on later tokens
 
 ### 9. Copy code / copy response
 
@@ -584,6 +587,7 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 5 is shipped. Do not render `Header` inside `Chat`.
 - Feature 6 is shipped. Persist `ChatStore` under `ai-chat:v1`. New chat appends a conversation. Do not go back to remounting `Chat`, and do not persist a bare `Message[]`.
 - Feature 7 is shipped. The sidebar reads that list. Do not add a storage key. Switching, or deleting the open conversation, aborts the in-flight reply.
+- Feature 8 is shipped. Highlight fenced code with Prism only. Do not add Shiki. Put copy on the `CodeBlock` wrapper in feature 9.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

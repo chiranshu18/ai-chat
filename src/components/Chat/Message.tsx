@@ -1,9 +1,33 @@
-import { useEffect, useState } from "react"
-import ReactMarkdown from "react-markdown";
+import { isValidElement, memo, useEffect, useState, type ReactNode } from "react"
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Message as MessageType } from "@/types/chat"
+import CodeBlock from "./CodeBlock"
 import styles from "./message.module.scss"
+
+function blockText(value: ReactNode): string {
+  if (typeof value === "string" || typeof value === "number") return String(value)
+  if (Array.isArray(value)) return value.map(blockText).join("")
+  return ""
+}
+
+const markdownComponents: Components = {
+  pre({ children }) {
+    const child = Array.isArray(children) ? children[0] : children
+    if (!isValidElement<{ className?: string; children?: ReactNode }>(child)) {
+      return <pre>{children}</pre>
+    }
+
+    const className = child.props.className ?? ""
+    const language = /language-(\S+)/.exec(className)?.[1] ?? null
+    const code = blockText(child.props.children).replace(/\n$/, "")
+    return <CodeBlock code={code} language={language} />
+  },
+  code({ children }) {
+    return <code className={styles.inline}>{children}</code>
+  },
+}
 
 interface MessageProps {
   message: MessageType
@@ -101,7 +125,7 @@ const Message = ({
         ) : (
           <>
             {message.content ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {message.content}
               </ReactMarkdown>
             ) : null}
@@ -135,4 +159,15 @@ const Message = ({
   )
 }
 
-export default Message
+function sameMessage(prev: MessageProps, next: MessageProps) {
+  return (
+    prev.message.id === next.message.id &&
+    prev.message.content === next.message.content &&
+    prev.message.status === next.message.status &&
+    prev.message.error === next.message.error &&
+    prev.isStreaming === next.isStreaming &&
+    prev.canRegenerate === next.canRegenerate
+  )
+}
+
+export default memo(Message, sameMessage)
