@@ -1,18 +1,36 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import Header from "@/components/Layout/Header"
-import Chat from "@/components/Chat/Chat"
+import Sidebar from "@/components/Layout/Sidebar"
+import Chat, { ChatActions } from "@/components/Chat/Chat"
+import { ChatStore } from "@/types/chat"
 import styles from "./styles.module.scss"
 
-
 export default function Home() {
-  const newChatRef = useRef<() => void>(() => {});
+  const actionsRef = useRef<ChatActions>({
+    newChat: () => {},
+    select: () => {},
+    deleteConversation: () => {},
+  });
+  const [store, setStore] = useState<ChatStore | null>(null);
 
   return (
     <div className={styles['page-container']}>
-      <Header onNewChat={() => newChatRef.current()} />
-      <Chat onRegisterNewChat={(newChat) => {
-        newChatRef.current = newChat;
-      }} />
+      <Sidebar
+        conversations={store?.conversations ?? []}
+        activeId={store?.activeId ?? ""}
+        onNewChat={() => actionsRef.current.newChat()}
+        onSelect={(id) => actionsRef.current.select(id)}
+        onDelete={(id) => actionsRef.current.deleteConversation(id)}
+      />
+      <div className={styles['main-column']}>
+        <Header onNewChat={() => actionsRef.current.newChat()} />
+        <Chat
+          onRegisterActions={(actions) => {
+            actionsRef.current = actions;
+          }}
+          onStoreChange={setStore}
+        />
+      </div>
     </div>
   );
 }

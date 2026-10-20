@@ -100,8 +100,15 @@ function mapConversationMessages(
   return { ...store, conversations };
 }
 
+export interface ChatActions {
+  newChat: () => void
+  select: (id: string) => void
+  deleteConversation: (id: string) => void
+}
+
 interface ChatProps {
-  onRegisterNewChat: (newChat: () => void) => void
+  onRegisterActions: (actions: ChatActions) => void
+  onStoreChange: (store: ChatStore | null) => void
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -123,13 +130,17 @@ async function readErrorMessage(response: Response): Promise<string> {
   return GENERIC_ERROR;
 }
 
-const Chat = ({ onRegisterNewChat }: ChatProps) => {
+const Chat = ({ onRegisterActions, onStoreChange }: ChatProps) => {
   const [store, setStore] = useState<ChatStore | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
-  const onRegisterNewChatRef = useRef(onRegisterNewChat);
+  const streamingConversationIdRef = useRef<string | null>(null);
+  const onRegisterActionsRef = useRef(onRegisterActions);
+  const onStoreChangeRef = useRef(onStoreChange);
   const handleNewChatRef = useRef<() => void>(() => {});
+  const handleSelectRef = useRef<(id: string) => void>(() => {});
+  const handleDeleteRef = useRef<(id: string) => void>(() => {});
 
   const active = store?.conversations.find(
     (conversation) => conversation.id === store.activeId
@@ -152,15 +163,28 @@ const Chat = ({ onRegisterNewChat }: ChatProps) => {
   }, []);
 
   useEffect(() => {
-    onRegisterNewChatRef.current = onRegisterNewChat;
-  }, [onRegisterNewChat]);
+    onRegisterActionsRef.current = onRegisterActions;
+  }, [onRegisterActions]);
 
   useEffect(() => {
-    onRegisterNewChatRef.current(() => handleNewChatRef.current());
+    onStoreChangeRef.current = onStoreChange;
+  }, [onStoreChange]);
+
+  useEffect(() => {
+    onStoreChangeRef.current(store);
+  }, [store]);
+
+  useEffect(() => {
+    onRegisterActionsRef.current({
+      newChat: () => handleNewChatRef.current(),
+      select: (id) => handleSelectRef.current(id),
+      deleteConversation: (id) => handleDeleteRef.current(id),
+    });
   }, []);
 
   const streamAssistantReply = async (history: Message[], conversationId: string) => {
     const requestId = ++requestIdRef.current;
+    streamingConversationIdRef.current = conversationId;
     abortRef.current?.abort();
 
     const controller = new AbortController();
@@ -179,7 +203,7 @@ const Chat = ({ onRegisterNewChat }: ChatProps) => {
     const pushText = (text: string) => {
       if (!text) return;
       setStore((prev) => {
-        if (!prev) return prev;
+        if (!prev || prev.activeId !== conversationId) return prev;
         return mapConversationMessages(prev, conversationId, (current) =>
           appendChunk(current, assistantId, text)
         );
@@ -258,7 +282,7 @@ const Chat = ({ onRegisterNewChat }: ChatProps) => {
 
       if (!failed) {
         setStore((prev) => {
-          if (!prev) return prev;
+          if (!prev || prev.activeId !== conversationId) return prev;
           return mapConversationMessages(prev, conversationId, (current) =>
             updateMessage(current, assistantId, { status: "complete" })
           );
@@ -306,6 +330,7 @@ const Chat = ({ onRegisterNewChat }: ChatProps) => {
     } finally {
       if (requestIdRef.current === requestId) {
         setIsThinking(false);
+        streamingConversationIdRef.current = null;
         if (abortRef.current === controller) {
           abortRef.current = null;
         }
@@ -352,7 +377,49 @@ const Chat = ({ onRegisterNewChat }: ChatProps) => {
     });
   };
 
+  const handleSelect = (id: string) => {
+    if (!store || store.activeId === id) return;
+    if (!store.conversations.some((conversation) => conversation.id === id)) return;
+
+    abortRef.current?.abort();
+    setIsThinking(false);
+    setStore((prev) => {
+      if (!prev || prev.activeId === id) return prev;
+      if (!prev.conversations.some((conversation) => conversation.id === id)) return prev;
+      return { ...prev, activeId: id };
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    if (streamingConversationIdRef.current === id) {
+      abortRef.current?.abort();
+      setIsThinking(false);
+    }
+
+    setStore((prev) => {
+      if (!prev) return prev;
+      if (!prev.conversations.some((conversation) => conversation.id === id)) return prev;
+
+      const remaining = prev.conversations.filter((conversation) => conversation.id !== id);
+      if (remaining.length === 0) {
+        const conversation = createConversation();
+        return { activeId: conversation.id, conversations: [conversation] };
+      }
+
+      if (prev.activeId !== id) {
+        return { ...prev, conversations: remaining };
+      }
+
+      const sorted = [...prev.conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+      const index = sorted.findIndex((conversation) => conversation.id === id);
+      const neighbor = sorted[index + 1] ?? sorted[index - 1] ?? remaining[0];
+      return { activeId: neighbor.id, conversations: remaining };
+    });
+  };
+
   handleNewChatRef.current = handleNewChat;
+  handleSelectRef.current = handleSelect;
+  handleDeleteRef.current = handleDelete;
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -396,11 +463,15 @@ const Chat = ({ onRegisterNewChat }: ChatProps) => {
 
     setStore((prev) => {
       if (!prev) return prev;
-      return updateConversation(prev, conversationId, (conversation) => ({
-        ...conversation,
-        messages: history,
-        updatedAt: Date.now(),
-      }));
+      return updateConversation(prev, conversationId, (conversation) => {
+        const firstUserId = conversation.messages.find((message) => message.role === "user")?.id;
+        return {
+          ...conversation,
+          title: firstUserId === id ? titleFromMessage(trimmed) : conversation.title,
+          messages: history,
+          updatedAt: Date.now(),
+        };
+      });
     });
     void streamAssistantReply(history, conversationId);
   };

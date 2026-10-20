@@ -6,7 +6,7 @@ This file describes what is built today and the planned work after it. It is wri
 
 ## Purpose
 
-A single-page chat UI that streams replies from Google Gemini. The screen is one conversation held in React state. Nothing is saved across reloads. There is no auth, no sidebar, and no settings UI.
+A single-page chat UI that streams replies from Google Gemini. Conversations are stored in the browser and listed in a sidebar. There is no auth and no settings UI.
 
 The product name in the header is the string `ChatGpt`. The model behind it is Gemini.
 
@@ -18,7 +18,7 @@ The product name in the header is the string `ChatGpt`. The model behind it is G
 | Language | TypeScript, `strict` |
 | Styling | SCSS modules for components. Tailwind 4 is imported in `src/styles/globals.css` and is unused by components |
 | Markdown | `react-markdown` + `remark-gfm` for assistant messages |
-| Icons | `lucide-react` (`SendHorizontal` only) |
+| Icons | `lucide-react` (`SendHorizontal`, `Square`, `Trash2`) |
 | IDs | `uuid` v4 |
 | Model SDK | `@google/genai` on the server |
 | Compiler | React Compiler on (`reactCompiler: true`). `reactStrictMode` is off |
@@ -49,7 +49,7 @@ There is no README, no `.env.example`, and no test suite.
 ```
 src/
   pages/
-    index.tsx              Home: Header + Chat. New chat calls into Chat.
+    index.tsx              Home: sidebar plus a column of Header and Chat.
     _app.tsx               Imports globals.css only.
     _document.tsx          lang="en", antialiased body.
     styles.module.scss     Full-viewport dark page (#2f2f2f).
@@ -58,6 +58,7 @@ src/
       hello.ts             Unused Next boilerplate. Safe to delete.
   components/
     Layout/Header.tsx      Fixed 54px bar. Label "ChatGpt". New chat button.
+    Layout/Sidebar.tsx     Conversation list, select, delete, and new chat.
     Chat/Chat.tsx          State, send, stream reader.
     Chat/ChatInput.tsx     Textarea + send icon.
     Chat/MessageList.tsx   Scrolls to the latest message.
@@ -76,7 +77,7 @@ Path alias: `@/*` → `src/*` (`tsconfig.json`).
 
 Layout math, used by later UI work:
 
-- The page is `100vh`. The header is `54px` tall and is a sibling of `Chat`, not a child of it.
+- The page is `100vh` and a row: a 260px sidebar, then the header/chat column. The header is `54px` tall and is a sibling of `Chat`, not a child of it. Chat width percentages are of that column.
 - `.chat-container` is `height: calc(100% - 54px)`. That `54px` is the header.
 - The chat column width is `60%`, centered.
 - The composer is `position: absolute`, `min-height: 54px`, `bottom: 24px`.
@@ -129,7 +130,7 @@ sequenceDiagram
 6. Any other failure sets `status: "error"` and a short `error` string on that assistant message, and keeps partial text. `Thinking...` is only the empty streaming state.
 7. `finally` sets `isThinking` to false only when the request id is still the latest one. Retry deletes that assistant message and calls `streamAssistantReply` with the history above it.
 
-Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts the in-flight controller. State is a `ChatStore`: the screen shows `conversations` for `activeId`. New chat aborts any in-flight reply, prepends another conversation, and selects it. The composer remounts with that conversation id, so its text clears. A `useEffect` writes the store to `localStorage` on each change. Chunks update the conversation id captured when the request started.
+Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts the in-flight controller. State is a `ChatStore`: the screen shows `conversations` for `activeId`. New chat aborts any in-flight reply, prepends another conversation, and selects it. The sidebar lists every conversation, newest `updatedAt` first. Selecting another conversation, or deleting the open one, aborts the in-flight reply. A chunk or a `complete` status is written only when `activeId` is still that conversation, so a late update after a switch is dropped. Abort still marks the conversation that started the request as `cancelled`, or removes an empty placeholder. The composer remounts with the active conversation id, so its text clears. A `useEffect` writes the store to `localStorage` on each change.
 
 ### Composer (`src/components/Chat/ChatInput.tsx`)
 
@@ -178,7 +179,7 @@ These are bugs or missing seams. Each one names the roadmap item that should fix
 2. **Stream updates. Shipped in feature 1.** `appendChunk` in `Chat.tsx` replaces the assistant message with the id captured for that request. Do not write chunks onto the last index, and do not mutate `message.content` in place.
 3. **UTF-8. Shipped in feature 1.** The reader uses `decode(value, { stream: true })` and flushes with a final `decode()`. Do not drop `{ stream: true }`. There is no chunk `console.log`.
 4. **Error status. Shipped in feature 2.** `Thinking...` is only an empty message that is still `streaming` (or has no status). `status: "error"` shows `message.error` and Retry. Do not infer failure from an empty string.
-5. **No settings UI or sidebar.** Abort, retry, and `localStorage` shipped in features 1, 2, and 6. The sidebar is feature 7. The model string `gemini-3-flash-preview` stays hardcoded in the API until feature 11, and each conversation already stores `settings.model`. A not-found response surfaces as `This model is unavailable`.
+5. **No settings UI.** The sidebar shipped in feature 7 and reads the feature 6 `ChatStore`. Do not add a storage key. The model string `gemini-3-flash-preview` stays hardcoded in the API until feature 11, and each conversation already stores `settings.model`. A not-found response surfaces as `This model is unavailable`.
 6. **React Strict Mode is off.** Effects do not double-invoke in dev. Do not rely on that. If Strict Mode is turned on later, the send effect must tolerate a remount (abort on cleanup).
 7. **Streaming format stays plain text chunks. Shipped sentinel in feature 2.** Do not switch to SSE. Failures before the first byte stay a non-OK status plus a JSON `{ error }` body. Failures after headers are sent append `\n[[ai-chat:error]]`. The client strips that exact suffix. Do not show it, and do not treat a stream that ends without it as an error.
 8. **Auto-scroll. Shipped in feature 1.** Follow the bottom on a new message. During a stream, stop following when `scrollTop` decreases, and resume within 80px of the bottom. Keep chunk scrolling on `behavior: "auto"`.
@@ -224,7 +225,7 @@ Rules:
 - Title: first user message, trimmed, capped (about 40 characters). Fallback `New chat` until the first send.
 - `settings.model` defaults to the current hardcoded model until feature 11 exposes a control. Persist it from day one so a later settings change does not rewrite old records.
 - Storage key: `ai-chat:v1`. If the shape changes, bump the suffix and ignore unknown payloads (fall back to one empty conversation). Do not throw on corrupt JSON.
-- One active conversation in the UI until feature 7. The store still holds an array of one.
+- The sidebar lists every conversation. The main column shows the active one.
 
 ## How to update this doc
 
@@ -447,13 +448,15 @@ Learn: data modeling, state architecture.
 
 **Connects to.** Persistence from feature 6 is the state. No new storage key. Settings from feature 11 are per conversation (`conversation.settings`).
 
+**Shipped.** `Sidebar` is a full-height sibling of the header/chat column. Rows are `conversation.title`, newest `updatedAt` first. Header and sidebar New chat both prepend and select. Delete removes that row. Deleting the open chat aborts its reply and selects the next row in that order, or the previous row if it was last. Deleting a different row leaves the active reply running. An empty list is replaced with one new conversation. Editing the first user message updates the title. Chunks and `complete` are applied only while that conversation is still active.
+
 **Done when.**
 
-- [ ] Create, switch, and delete conversations persist across reload
-- [ ] The message list always matches the selected conversation
-- [ ] Switching or deleting aborts an in-flight reply
-- [ ] The list is never empty after a delete (a fresh conversation is created)
-- [ ] Titles stay in sync with the first user message
+- [x] Create, switch, and delete conversations persist across reload
+- [x] The message list always matches the selected conversation
+- [x] Switching or deleting aborts an in-flight reply
+- [x] The list is never empty after a delete (a fresh conversation is created)
+- [x] Titles stay in sync with the first user message
 
 ### 8. Code syntax highlighting
 
@@ -579,7 +582,8 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 3 is shipped. Regenerate resends the history above the latest assistant message. Do not append a second user message.
 - Feature 4 is shipped. Editing a user message keeps that id, drops every message after it, and resends. Do not send an empty trimmed edit.
 - Feature 5 is shipped. Do not render `Header` inside `Chat`.
-- Feature 6 is shipped. Persist `ChatStore` under `ai-chat:v1`. New chat appends a conversation. Do not go back to remounting `Chat`, and do not persist a bare `Message[]`. Feature 7 is a UI over this list.
+- Feature 6 is shipped. Persist `ChatStore` under `ai-chat:v1`. New chat appends a conversation. Do not go back to remounting `Chat`, and do not persist a bare `Message[]`.
+- Feature 7 is shipped. The sidebar reads that list. Do not add a storage key. Switching, or deleting the open conversation, aborts the in-flight reply.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.
