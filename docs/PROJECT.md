@@ -63,7 +63,8 @@ src/
     Chat/ChatInput.tsx     Textarea + send icon.
     Chat/MessageList.tsx   Scrolls to the latest message.
     Chat/Message.tsx       User text or assistant markdown. Memoized on id, content, and status.
-    Chat/CodeBlock.tsx     Fenced code wrapper. Prism highlight, or plain pre.
+    Chat/CodeBlock.tsx     Fenced code wrapper. Prism highlight, or plain pre. Copy writes the raw fence.
+    Chat/CopyButton.tsx    Clipboard write with Copied / Copy failed on the button.
     Chat/EmptyState.tsx    "Hi, How can I help you today?"
   hooks/                   Empty. No hooks yet.
   lib/gemini.ts            GoogleGenAI client.
@@ -166,7 +167,7 @@ The client is created at module load. A missing key is rejected in the API route
 
 - Empty `messages` shows `EmptyState`. Any length shows `MessageList`.
 - User bubbles are right-aligned plain text, with Edit when nothing is streaming. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
-- Fenced code in assistant messages is highlighted with Prism (`react-syntax-highlighter`, `oneDark`) when the language tag is one Prism knows, including aliases such as `js` and `ts`. A missing or unknown language stays plain preformatted text inside the same `CodeBlock` wrapper. Inline code stays inline. User messages stay plain text. `Message` skips re-rendering when its id, content, status, error, streaming flag, and regenerate flag are unchanged, so a chunk does not redraw earlier bubbles. `CodeBlock` skips re-highlighting when its source and language are unchanged.
+- Fenced code in assistant messages is highlighted with Prism (`react-syntax-highlighter`, `oneDark`) when the language tag is one Prism knows, including aliases such as `js` and `ts`. A missing or unknown language stays plain preformatted text inside the same `CodeBlock` wrapper. Each block has Copy, which writes that fence's raw source. Inline code stays inline. User messages stay plain text. A finished assistant message has Copy response, which writes `message.content`. Both controls are hidden while that message is `streaming` or empty. A clipboard rejection changes the button to `Copy failed` and does not alert. `Message` skips re-rendering when its id, content, status, error, streaming flag, and regenerate flag are unchanged, so a chunk does not redraw earlier bubbles. `CodeBlock` skips re-highlighting when its source and language are unchanged.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
 - `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
 - Colors are hardcoded dark (`#2f2f2f` page, `#212121` bubbles and composer). `globals.css` light/dark variables do not drive the chat.
@@ -499,12 +500,14 @@ Learn: DOM and Clipboard API, small UX.
 
 **Connects to.** Independent of sidebar and storage. Uses `status` from feature 2 so a streaming message is not copied mid-token. If feature 2 is somehow missing, hide copy when `isThinking` and the message is the last assistant message.
 
+**Shipped.** Copy on `CodeBlock` writes the `code` prop. Copy response writes `message.content`. Both are hidden while `status` is `streaming` or the message content is empty. The button shows `Copied` for two seconds, or `Copy failed` when `clipboard.writeText` is missing or rejects.
+
 **Done when.**
 
-- [ ] Copy on a code block writes only that block's source
-- [ ] Copy response writes the full assistant markdown
-- [ ] The control is absent or disabled while that message is streaming
-- [ ] Clipboard failure is visible on the control and does not throw into the chat
+- [x] Copy on a code block writes only that block's source
+- [x] Copy response writes the full assistant markdown
+- [x] The control is absent or disabled while that message is streaming
+- [x] Clipboard failure is visible on the control and does not throw into the chat
 
 ### 10. Auto-resizing textarea
 
@@ -587,7 +590,8 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 5 is shipped. Do not render `Header` inside `Chat`.
 - Feature 6 is shipped. Persist `ChatStore` under `ai-chat:v1`. New chat appends a conversation. Do not go back to remounting `Chat`, and do not persist a bare `Message[]`.
 - Feature 7 is shipped. The sidebar reads that list. Do not add a storage key. Switching, or deleting the open conversation, aborts the in-flight reply.
-- Feature 8 is shipped. Highlight fenced code with Prism only. Do not add Shiki. Put copy on the `CodeBlock` wrapper in feature 9.
+- Feature 8 is shipped. Highlight fenced code with Prism only. Do not add Shiki.
+- Feature 9 is shipped. Copy writes the raw fence or the assistant markdown. Hide both while that message is streaming or empty. Do not alert on clipboard failure.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

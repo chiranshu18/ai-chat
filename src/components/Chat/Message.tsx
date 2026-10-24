@@ -3,7 +3,8 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Message as MessageType } from "@/types/chat"
-import CodeBlock from "./CodeBlock"
+import CodeBlock, { ShowCodeCopy } from "./CodeBlock"
+import CopyButton from "./CopyButton"
 import styles from "./message.module.scss"
 
 function blockText(value: ReactNode): string {
@@ -57,6 +58,7 @@ const Message = ({
     message.status !== "complete" &&
     message.status !== "cancelled"
   const canEdit = isUser && !isStreaming && !isEditing
+  const canCopyResponse = !isUser && Boolean(message.content) && message.status !== "streaming"
 
   useEffect(() => {
     if (!isStreaming) return
@@ -125,9 +127,11 @@ const Message = ({
         ) : (
           <>
             {message.content ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {message.content}
-              </ReactMarkdown>
+              <ShowCodeCopy.Provider value={message.status !== "streaming"}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {message.content}
+                </ReactMarkdown>
+              </ShowCodeCopy.Provider>
             ) : null}
             {isError ? (
               <div className={styles.error}>
@@ -141,15 +145,24 @@ const Message = ({
                 </button>
               </div>
             ) : null}
-            {canRegenerate ? (
+            {canCopyResponse || canRegenerate ? (
               <div className={styles.actions}>
-                <button
-                  type="button"
-                  onClick={() => onRegenerate(message.id)}
-                  disabled={isStreaming}
-                >
-                  Regenerate
-                </button>
+                {canCopyResponse ? (
+                  <CopyButton
+                    text={message.content}
+                    idle="Copy response"
+                    failedClassName={styles["copy-failed"]}
+                  />
+                ) : null}
+                {canRegenerate ? (
+                  <button
+                    type="button"
+                    onClick={() => onRegenerate(message.id)}
+                    disabled={isStreaming}
+                  >
+                    Regenerate
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </>

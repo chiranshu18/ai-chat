@@ -1,10 +1,36 @@
-.frame {
+.wrap {
   width: max-content;
   max-width: 100%;
   margin: 8px 0;
   border-radius: 12px;
-  overflow: auto;
   background: hsl(220, 13%, 18%);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 10px 0;
+}
+
+.copy {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.failed {
+  color: #f0a8a8;
+}
+
+.frame {
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
 }
 
 .plain {

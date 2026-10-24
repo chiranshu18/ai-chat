@@ -1,9 +1,12 @@
-import { memo } from "react"
+import { createContext, memo, useContext } from "react"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { refractor } from "refractor/all"
 
+import CopyButton from "./CopyButton"
 import styles from "./codeBlock.module.scss"
+
+export const ShowCodeCopy = createContext(false)
 
 interface CodeBlockProps {
   code: string
@@ -21,23 +24,36 @@ const highlighterStyle = {
 
 function CodeBlock({ code, language }: CodeBlockProps) {
   const knownLanguage = language && refractor.registered(language) ? language : null
+  const showCopy = useContext(ShowCodeCopy)
 
   return (
-    <div className={styles.frame}>
-      {knownLanguage ? (
-        <SyntaxHighlighter
-          language={knownLanguage}
-          style={oneDark}
-          PreTag="div"
-          customStyle={highlighterStyle}
-        >
-          {code}
-        </SyntaxHighlighter>
-      ) : (
-        <pre className={styles.plain}>
-          <code>{code}</code>
-        </pre>
-      )}
+    <div className={styles.wrap}>
+      {showCopy ? (
+        <div className={styles.toolbar}>
+          <CopyButton
+            text={code}
+            idle="Copy"
+            className={styles.copy}
+            failedClassName={styles.failed}
+          />
+        </div>
+      ) : null}
+      <div className={styles.frame}>
+        {knownLanguage ? (
+          <SyntaxHighlighter
+            language={knownLanguage}
+            style={oneDark}
+            PreTag="div"
+            customStyle={highlighterStyle}
+          >
+            {code}
+          </SyntaxHighlighter>
+        ) : (
+          <pre className={styles.plain}>
+            <code>{code}</code>
+          </pre>
+        )}
+      </div>
     </div>
   )
 }
