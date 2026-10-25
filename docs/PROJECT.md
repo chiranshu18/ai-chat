@@ -80,10 +80,9 @@ Path alias: `@/*` → `src/*` (`tsconfig.json`).
 Layout math, used by later UI work:
 
 - The page is `100vh` and a row: a 260px sidebar, then the header/chat column. The header is `54px` tall and is a sibling of `Chat`, not a child of it. Chat width percentages are of that column.
-- `.chat-container` is `height: calc(100% - 54px)`. That `54px` is the header.
+- `.chat-container` is `height: calc(100% - 54px)` and a column flex. That `54px` is the header.
 - The chat column width is `60%`, centered.
-- The composer is `position: absolute`, `min-height: 54px`, `bottom: 24px`.
-- The message list height is `calc(100% - 54px - 24px)` inside `.chat-container`. Those numbers are the composer's min-height and bottom offset. They match the header height by coincidence. The list does not subtract the header again.
+- The message list is `flex: 1; min-height: 0; overflow: auto`. The composer sits under it in normal flow, `min-height: 54px`, with `24px` of space below it. The textarea grows to `160px`, then scrolls.
 
 ## Data model today
 
@@ -136,7 +135,7 @@ Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts 
 
 ### Composer (`src/components/Chat/ChatInput.tsx`)
 
-- Local `query` state. Placeholder `Ask anything!`. `rows={1}`. `resize: none` in SCSS.
+- Local `query` state. Placeholder `Ask anything!`. `rows={1}`. `resize: none` in SCSS. The field grows with the text up to `160px`, then scrolls, and returns to one line when `query` is empty.
 - Enter sends. Shift+Enter inserts a newline.
 - Send is ignored when `isThinking` is true or the trimmed query is empty.
 - While `isThinking`, the send icon is a stop button (`Square`) that calls `onStop`. Enter still does not send.
@@ -522,12 +521,14 @@ Learn: DOM measurements, UX.
 
 **Layout (required).** A growing composer will cover the last messages. The list height is a static `calc(100% - 54px - 24px)`, and that `54px` is the composer's min-height, not the header. The composer is `position: absolute`, so it does not push the list. Make `.chat-container` a column flex: the list is `flex: 1; min-height: 0; overflow: auto`, and the composer sits in normal flow under it. Drop the absolute positioning, or use an equivalent that reserves the composer's real height.
 
+**Shipped.** The textarea height is set from `scrollHeight`, capped at 160px. `.chat-container` is a column. The list and empty state use `flex: 1; min-height: 0`. The composer is in normal flow with 24px below it.
+
 **Done when.**
 
-- [ ] One line stays one line tall
-- [ ] Several lines grow the field until the max, then the field scrolls
-- [ ] After send, the field returns to one line
-- [ ] The latest message stays visible above the composer when the field is at max height
+- [x] One line stays one line tall
+- [x] Several lines grow the field until the max, then the field scrolls
+- [x] After send, the field returns to one line
+- [x] The latest message stays visible above the composer when the field is at max height
 
 ### 11. Model / settings controls
 
@@ -592,6 +593,7 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 7 is shipped. The sidebar reads that list. Do not add a storage key. Switching, or deleting the open conversation, aborts the in-flight reply.
 - Feature 8 is shipped. Highlight fenced code with Prism only. Do not add Shiki.
 - Feature 9 is shipped. Copy writes the raw fence or the assistant markdown. Hide both while that message is streaming or empty. Do not alert on clipboard failure.
+- Feature 10 is shipped. The composer grows to 160px in normal flow under the list. Do not put it back to `position: absolute`.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import styles from "./chatInput.module.scss"
 import { SendHorizontal, Square } from 'lucide-react'
 
@@ -8,8 +8,22 @@ interface ChatInputProps {
   isThinking: boolean;
 }
 
+const MAX_HEIGHT = 160
+
+function resizeTextarea(element: HTMLTextAreaElement) {
+  element.style.height = "auto"
+  const next = Math.min(element.scrollHeight, MAX_HEIGHT)
+  element.style.height = `${next}px`
+}
+
 const ChatInput = ({ onMessageSend, onStop, isThinking }: ChatInputProps) => {
   const [query, setQuery] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!textareaRef.current) return
+    resizeTextarea(textareaRef.current)
+  }, [query])
 
   const handleSend = () => {
     if (isThinking) return;
@@ -30,6 +44,7 @@ const ChatInput = ({ onMessageSend, onStop, isThinking }: ChatInputProps) => {
   return (
     <div className={styles['ci-container']}>
       <textarea
+        ref={textareaRef}
         value={query}
         placeholder='Ask anything!'
         rows={1}
