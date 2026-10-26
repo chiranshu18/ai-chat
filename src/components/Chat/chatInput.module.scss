@@ -1,8 +1,47 @@
-.ci-container {
+.composer {
   flex-shrink: 0;
   width: 60%;
-  min-height: 54px;
   margin-bottom: 24px;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: #212121;
+  color: #ddd;
+  font-size: 13px;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  button {
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+  }
+}
+
+.error {
+  margin: 0 0 8px;
+  color: #f0a8a8;
+  font-size: 13px;
+}
+
+.ci-container {
+  min-height: 54px;
 
   display: flex;
   justify-content: space-between;
@@ -18,7 +57,7 @@
     width: 100%;
     max-height: 160px;
     box-sizing: border-box;
-    padding: 16px 24px;
+    padding: 16px 12px;
     overflow-y: auto;
     background: transparent;
     color: #fff;
@@ -34,9 +73,10 @@
     }
   }
 
+  .attach,
   .send-button {
     cursor: pointer;
-    flex-shrink: 0; // Prevents icon from squishing when text grows
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     padding: 0;
@@ -44,4 +84,22 @@
     background: none;
     color: #fff;
   }
+
+  .attach {
+    margin-left: 16px;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.4;
+    }
+  }
+
+  .send-button:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}
+
+.hidden {
+  display: none;
 }

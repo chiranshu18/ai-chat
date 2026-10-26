@@ -2,12 +2,19 @@ export type Role = "user" | "assistant";
 
 export type MessageStatus = "streaming" | "complete" | "error" | "cancelled";
 
+export interface Attachment {
+  name: string;
+  mimeType: string;
+  text: string;
+}
+
 export interface Message {
   id: string;
   role: Role;
   content: string;
   status?: MessageStatus;
   error?: string;
+  attachment?: Attachment;
 }
 
 export interface ConversationSettings {

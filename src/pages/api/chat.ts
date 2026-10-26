@@ -1,7 +1,47 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { gemini } from "@/lib/gemini";
+import { DOCUMENT_TOO_LONG, MAX_DOCUMENT_CHARS } from "@/lib/document";
 import { toPublicError } from "@/lib/publicError";
 import { STREAM_ERROR_MARKER } from "@/lib/streamMarker";
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "4mb",
+    },
+  },
+};
+
+type IncomingMessage = {
+  role?: string;
+  content?: unknown;
+  attachment?: {
+    name?: unknown;
+    text?: unknown;
+  };
+};
+
+function messageText(message: IncomingMessage): string {
+  const content = typeof message.content === "string" ? message.content : "";
+  const text = message.attachment?.text;
+  if (message.role === "assistant" || typeof text !== "string" || text.length === 0) {
+    return content;
+  }
+
+  const name =
+    typeof message.attachment?.name === "string" && message.attachment.name.trim()
+      ? message.attachment.name.trim()
+      : "document";
+
+  return `${content}\n\nDocument: ${name}\n${text}`;
+}
+
+function attachmentIsTooLong(messages: IncomingMessage[]): boolean {
+  return messages.some((message) => {
+    const text = message?.attachment?.text;
+    return typeof text === "string" && text.length > MAX_DOCUMENT_CHARS;
+  });
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -22,6 +62,12 @@ export default async function handler(
       });
     }
 
+    if (attachmentIsTooLong(messages)) {
+      return res.status(400).json({
+        error: DOCUMENT_TOO_LONG,
+      });
+    }
+
     if (!process.env.GEMINI_API_KEY?.trim()) {
       return res.status(500).json({
         error: "API key is not configured",
@@ -30,11 +76,11 @@ export default async function handler(
 
     const response = await gemini.models.generateContentStream({
       model: "gemini-3-flash-preview",
-      contents: messages.map((message) => ({
+      contents: messages.map((message: IncomingMessage) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: [
           {
-            text: message.content,
+            text: messageText(message),
           },
         ],
       })),

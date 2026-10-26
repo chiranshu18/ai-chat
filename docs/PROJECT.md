@@ -18,7 +18,7 @@ The product name in the header is the string `ChatGpt`. The model behind it is G
 | Language | TypeScript, `strict` |
 | Styling | SCSS modules for components. Tailwind 4 is imported in `src/styles/globals.css` and is unused by components |
 | Markdown | `react-markdown` + `remark-gfm` for assistant messages |
-| Icons | `lucide-react` (`SendHorizontal`, `Square`, `Trash2`) |
+| Icons | `lucide-react` (`SendHorizontal`, `Square`, `Trash2`, `Paperclip`) |
 | IDs | `uuid` v4 |
 | Model SDK | `@google/genai` on the server |
 | Compiler | React Compiler on (`reactCompiler: true`). `reactStrictMode` is off |
@@ -54,13 +54,14 @@ src/
     _document.tsx          lang="en", antialiased body.
     styles.module.scss     Full-viewport dark page (#2f2f2f).
     api/
-      chat.ts              POST streaming chat. The only real API.
+      chat.ts              POST streaming chat.
+      document.ts          POST one file as base64. Returns extracted text. Does not call Gemini.
       hello.ts             Unused Next boilerplate. Safe to delete.
   components/
     Layout/Header.tsx      Fixed 54px bar. Label "ChatGpt". New chat button.
     Layout/Sidebar.tsx     Conversation list, select, delete, and new chat.
     Chat/Chat.tsx          State, send, stream reader.
-    Chat/ChatInput.tsx     Textarea + send icon.
+    Chat/ChatInput.tsx     Textarea, document attach, and send icon.
     Chat/MessageList.tsx   Scrolls to the latest message.
     Chat/Message.tsx       User text or assistant markdown. Memoized on id, content, and status.
     Chat/CodeBlock.tsx     Fenced code wrapper. Prism highlight, or plain pre. Copy writes the raw fence.
@@ -68,6 +69,9 @@ src/
     Chat/EmptyState.tsx    "Hi, How can I help you today?"
   hooks/                   Empty. No hooks yet.
   lib/gemini.ts            GoogleGenAI client.
+  lib/document.ts          Shared document size, type, and text limits.
+  lib/extractDocument.ts   Server PDF and text extraction. Not imported by components.
+  lib/uploadDocument.ts    Browser upload to /api/document.
   lib/storage.ts           localStorage ChatStore under ai-chat:v1.
   lib/publicError.ts       Maps provider failures to safe sentences.
   lib/streamMarker.ts      Trailing stream-error marker shared by API and client.
@@ -137,16 +141,17 @@ Stop calls `abort()` and sets `isThinking` to false immediately. Unmount aborts 
 
 - Local `query` state. Placeholder `Ask anything!`. `rows={1}`. `resize: none` in SCSS. The field grows with the text up to `160px`, then scrolls, and returns to one line when `query` is empty.
 - Enter sends. Shift+Enter inserts a newline.
-- Send is ignored when `isThinking` is true or the trimmed query is empty.
+- Send is ignored when `isThinking` is true, or when the trimmed query is empty and no file is attached. A file with an empty box sends the question `Review this document.`
+- One file can be attached: PDF, `.txt`, or `.md`. The name shows above the field, with Remove. An unsupported type or a file over 8 MB shows a short error and is not attached.
 - While `isThinking`, the send icon is a stop button (`Square`) that calls `onStop`. Enter still does not send.
-- The query clears as soon as send is accepted, before the response arrives.
+- The query and the file clear only after the document is read and the send is accepted. A failed read keeps both and shows the error under the file name.
 
 ### API (`src/pages/api/chat.ts`)
 
 - Methods other than POST → `405` `{ error: "Method not allowed" }`.
 - Missing or non-array `messages` → `400` `{ error: "Messages are required" }`.
 - Otherwise `gemini.models.generateContentStream` with model `gemini-3-flash-preview`.
-- Each client message is mapped to `{ role, parts: [{ text: message.content }] }`. `assistant` is sent as Gemini role `model`. Any other role is sent as `user`. Client state still stores `assistant`.
+- Each client message is mapped to `{ role, parts: [{ text }] }`. `assistant` is sent as Gemini role `model`. Any other role is sent as `user`. Client state still stores `assistant`. When a user message has `attachment.text`, that part is `message.content`, a blank line, `Document: {name}`, and the extracted text. Attachment text longer than 200,000 characters is `400` `{ error: "This document is too long." }` and is not sent to Gemini.
 - Response headers: `200`, `Content-Type: text/plain; charset=utf-8`, chunked. Each `chunk.text` is written raw. No SSE framing, no JSON lines.
 - A missing `GEMINI_API_KEY` returns `500` `{ error: "API key is not configured" }` before calling Gemini.
 - On throw: log the original error on the server only. If headers are not sent, `500` with one of: `This model is unavailable` (404 / not found), `Rate limit reached. Try again in a moment.` (429 / quota), or `Something went wrong`. The body never includes the provider payload or the key.
@@ -165,7 +170,7 @@ The client is created at module load. A missing key is rejected in the API route
 ## UI behavior today
 
 - Empty `messages` shows `EmptyState`. Any length shows `MessageList`.
-- User bubbles are right-aligned plain text, with Edit when nothing is streaming. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
+- User bubbles are right-aligned plain text, with Edit when nothing is streaming. If that message has an attachment, the file name is shown and the extracted text is not. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
 - Fenced code in assistant messages is highlighted with Prism (`react-syntax-highlighter`, `oneDark`) when the language tag is one Prism knows, including aliases such as `js` and `ts`. A missing or unknown language stays plain preformatted text inside the same `CodeBlock` wrapper. Each block has Copy, which writes that fence's raw source. Inline code stays inline. User messages stay plain text. A finished assistant message has Copy response, which writes `message.content`. Both controls are hidden while that message is `streaming` or empty. A clipboard rejection changes the button to `Copy failed` and does not alert. `Message` skips re-rendering when its id, content, status, error, streaming flag, and regenerate flag are unchanged, so a chunk does not redraw earlier bubbles. `CodeBlock` skips re-highlighting when its source and language are unchanged.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
 - `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
@@ -192,12 +197,19 @@ This shape is in `src/types/chat.ts` and is the `localStorage` payload. Do not p
 ```ts
 export type Role = "user" | "assistant";
 
+export interface Attachment {
+  name: string;
+  mimeType: string;
+  text: string;
+}
+
 export interface Message {
   id: string;
   role: Role;
   content: string;
   status?: "streaming" | "complete" | "error" | "cancelled";
   error?: string;
+  attachment?: Attachment;
 }
 
 export interface ConversationSettings {
@@ -226,6 +238,7 @@ Rules:
 - Title: first user message, trimmed, capped (about 40 characters). Fallback `New chat` until the first send.
 - `settings.model` defaults to the current hardcoded model until feature 11 exposes a control. Persist it from day one so a later settings change does not rewrite old records.
 - Storage key: `ai-chat:v1`. If the shape changes, bump the suffix and ignore unknown payloads (fall back to one empty conversation). Do not throw on corrupt JSON.
+- `attachment` is optional and only kept on a user message. It stores the file name, mime type, and extracted text. Raw file bytes are not stored. `loadStore()` drops an attachment whose text is empty or longer than 200,000 characters, and drops any attachment on an assistant message.
 - The sidebar lists every conversation. The main column shows the active one.
 
 ## How to update this doc
@@ -244,7 +257,8 @@ Unless a later request adds them:
 
 - Accounts, auth, or server-side chat history
 - Sharing, export, or search across chats
-- Image or file uploads, tool calling, system prompt UI
+- Image uploads, Word documents, and OCR. PDF and plain-text documents are feature 13
+- Tool calling, or a system prompt UI
 - Changing the stream from raw `text/plain` chunks to another protocol
 - Replacing SCSS modules with Tailwind, or a visual redesign beyond what a feature needs
 - Deleting `src/pages/api/hello.ts` or the unused Geist imports, except as a tiny cleanup inside a feature that already edits those files
@@ -547,6 +561,8 @@ Learn: API parameters, UI state.
 
 **Connects to.** `Conversation.settings` already exists from feature 6, so this is a UI plus the API reading the field. Persist the change through the existing store effect.
 
+**Skipped.** No model picker. The API keeps the hardcoded `gemini-3-flash-preview`. `settings.model` stays on each conversation for storage compatibility, and it is not sent.
+
 **Done when.**
 
 - [ ] The selected model is stored on the conversation and restored on reload
@@ -570,6 +586,8 @@ Learn: environment variables, production concerns.
 
 **Connects to.** No feature work should import `src/lib/gemini.ts` from a component.
 
+**Deferred.** Do not deploy yet. Leave this item until a later request.
+
 **Done when.**
 
 - [ ] `npm run build` succeeds
@@ -578,6 +596,43 @@ Learn: environment variables, production concerns.
 - [ ] The client bundle does not contain the key
 - [ ] `.env*` stays gitignored
 - [ ] The deploy is either behind host access control, or the notes record that an open URL is an accepted risk
+
+### 13. Document upload
+
+Learn: file input, sending a document to Gemini without putting the API key in the browser, and keeping that text in the conversation.
+
+**Feasible.** Gemini already accepts document text in the same `generateContent` call the chat uses. A resume review, interview preparation from a job description, or a PDF summary is the same chat: the user attaches a file and asks a question. This feature does not add separate modes for those tasks.
+
+**Behavior.** The composer can attach one file: PDF, `.txt`, or `.md`. The user can remove it before sending. Send includes the question and the file. The user bubble shows the question and the file name, not the full document. Later messages in that chat can ask follow-ups without attaching the file again. A new chat does not see the previous chat's document.
+
+The browser sends the file to a server route. That route extracts the text and returns it. The chat request stays `POST /api/chat` with the existing text stream. On each turn, the server adds the stored document text to that user message's Gemini part. Raw file bytes are not written to `localStorage`. The stored shape is the file name, the mime type, and the extracted text, on that user message.
+
+Reject anything that is not PDF, plain text, or markdown, and reject a file over about 8 MB, with a short message on the composer. If a PDF has no text layer, say that it has no readable text. Do not add OCR. Cap the stored text at about 200,000 characters so one document cannot fill `localStorage`. A larger extraction is an error, not a silent trim.
+
+An empty question with a file still sends. Use the question "Review this document." so a file alone is a valid request.
+
+**Files.**
+
+- `src/types/chat.ts` — optional `attachment` on `Message`: `{ name, mimeType, text }`. Only user messages have it.
+- `src/pages/api/document.ts` — `POST` one file, return `{ name, mimeType, text }`. Raise the Pages body size limit enough for an 8 MB file. Do not call Gemini here, and do not read `GEMINI_API_KEY` into the response.
+- `src/pages/api/chat.ts` — when a message has `attachment.text`, include that text in the Gemini `parts` for that turn, along with `message.content`. Keep the `assistant` → `model` role map. The response stays raw `text/plain` chunks.
+- `src/components/Chat/ChatInput.tsx` — file control, chosen file name, remove, and send the file with the question.
+- `src/components/Chat/Chat.tsx` — call the document route, store the returned attachment on the user message, then stream as today. Follow-up sends include that attachment because it is part of the history.
+- `src/components/Chat/Message.tsx` — show the file name on the user bubble. The document body stays out of the bubble.
+
+**Connects to.** Persistence from feature 6 stores the attachment with the conversation. Reload restores the file name and the extracted text, and the next question still uses it. Do not add a storage key. Do not import `src/lib/gemini.ts` from a component.
+
+**Shipped.** The browser posts JSON `{ name, data }` to `/api/document`, with `data` as base64, so that route's body limit is `15mb`. The chat route's body limit is `4mb` so a history that includes extracted text still posts. PDF text uses `unpdf` in `src/lib/extractDocument.ts`. Shared limits live in `src/lib/document.ts`, and the browser upload is `src/lib/uploadDocument.ts`. A failed read leaves the composer text and the chosen file in place. The Gemini part is the question, then `Document: {name}`, then the extracted text.
+
+**Done when.**
+
+- [x] A PDF, `.txt`, or `.md` file can be attached, removed, and sent with a question
+- [x] The reply uses the document (a resume review or a PDF summary answers from that file)
+- [x] A follow-up in the same chat still uses the document, including after reload
+- [x] Another conversation does not include that document
+- [x] The user bubble shows the file name, not the extracted text
+- [x] An unsupported type, a file over the size cap, or a PDF with no readable text shows a short error and does not send
+- [x] The file bytes and the API key are not written to `localStorage`
 
 ## Suggested implementation order
 
@@ -594,6 +649,9 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 8 is shipped. Highlight fenced code with Prism only. Do not add Shiki.
 - Feature 9 is shipped. Copy writes the raw fence or the assistant markdown. Hide both while that message is streaming or empty. Do not alert on clipboard failure.
 - Feature 10 is shipped. The composer grows to 160px in normal flow under the list. Do not put it back to `position: absolute`.
+- Feature 11 is skipped. Do not add a model picker. Keep `gemini-3-flash-preview` hardcoded in the API.
+- Feature 12 is deferred. Do not deploy until a later request.
+- Feature 13 is shipped. Document upload is PDF, `.txt`, and `.md` only. Store extracted text on the user message. Do not put file bytes or the API key in `localStorage`, and do not change the chat stream to another protocol.
 - Persist `ChatStore` in feature 6, before building the sidebar, so feature 7 does not migrate `localStorage`.
 
 Features 8, 9, and 10 can land in parallel with 6 and 7 if needed. They touch `Message`, `ChatInput`, and the chat column layout. Features 1 through 5 should stay in order because they share the send helper.

@@ -91,6 +91,9 @@ const Message = ({
           "Thinking..."
         ) : isEditing ? (
           <>
+            {message.attachment ? (
+              <div className={styles.file}>{message.attachment.name}</div>
+            ) : null}
             <textarea
               className={styles['edit-input']}
               value={draft}
@@ -115,6 +118,9 @@ const Message = ({
           </>
         ) : isUser ? (
           <>
+            {message.attachment ? (
+              <div className={styles.file}>{message.attachment.name}</div>
+            ) : null}
             {message.content}
             {canEdit ? (
               <div className={styles.actions}>
@@ -178,6 +184,7 @@ function sameMessage(prev: MessageProps, next: MessageProps) {
     prev.message.content === next.message.content &&
     prev.message.status === next.message.status &&
     prev.message.error === next.message.error &&
+    prev.message.attachment?.name === next.message.attachment?.name &&
     prev.isStreaming === next.isStreaming &&
     prev.canRegenerate === next.canRegenerate
   )

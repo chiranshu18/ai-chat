@@ -14,6 +14,7 @@ import {
   saveStore,
   titleFromMessage,
 } from "@/lib/storage"
+import { uploadDocument } from "@/lib/uploadDocument"
 
 const GENERIC_ERROR = "Something went wrong";
 
@@ -338,14 +339,16 @@ const Chat = ({ onRegisterActions, onStoreChange }: ChatProps) => {
     }
   };
 
-  const handleSendMessage = (text: string) => {
-    if (!active) return;
+  const handleSendMessage = async (text: string, file: File | null) => {
+    if (!active || isThinking) return;
 
     const conversationId = active.id;
+    const attachment = file ? await uploadDocument(file) : undefined;
     const userMessage: Message = {
       id: uuid(),
       role: "user",
       content: text,
+      ...(attachment ? { attachment } : {}),
     };
     const history = withoutEmptyPlaceholders([...active.messages, userMessage]);
 

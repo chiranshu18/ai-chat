@@ -1,6 +1,7 @@
 import { v4 as uuid } from "uuid";
 
 import type {
+  Attachment,
   ChatStore,
   Conversation,
   Message,
@@ -8,6 +9,7 @@ import type {
   Role,
 } from "@/types/chat";
 import { DEFAULT_MODEL, NEW_CHAT_TITLE, TITLE_MAX_LENGTH } from "@/types/chat";
+import { MAX_DOCUMENT_CHARS } from "@/lib/document";
 
 export const STORAGE_KEY = "ai-chat:v1";
 
@@ -150,5 +152,34 @@ function normalizeMessage(value: unknown): Message | null {
     message.error = record.error;
   }
 
+  const attachment = normalizeAttachment(record.attachment, message.role);
+  if (attachment) {
+    message.attachment = attachment;
+  }
+
   return message;
+}
+
+function normalizeAttachment(value: unknown, role: Role): Attachment | undefined {
+  if (role !== "user" || !value || typeof value !== "object") return undefined;
+
+  const record = value as Partial<Attachment>;
+  if (
+    typeof record.name !== "string" ||
+    typeof record.mimeType !== "string" ||
+    typeof record.text !== "string"
+  ) {
+    return undefined;
+  }
+
+  const name = record.name.trim();
+  if (!name || record.text.length === 0 || record.text.length > MAX_DOCUMENT_CHARS) {
+    return undefined;
+  }
+
+  return {
+    name,
+    mimeType: record.mimeType,
+    text: record.text,
+  };
 }
