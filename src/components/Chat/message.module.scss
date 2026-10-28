@@ -3,26 +3,148 @@
   display: flex;
 
   .msg-wrapper {
-    max-width: 90%;
+    max-width: 85%;
     min-width: 0;
-    padding: 12px 16px;
-    background: #212121;
-    border-radius: 24px;
   }
 }
 
 .msg-user {
   justify-content: flex-end;
+
+  .msg-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    padding: 0;
+    background: transparent;
+  }
+}
+
+.bubble,
+.msg-user .editing {
+  max-width: 100%;
+  padding: 10px 14px;
+  background: var(--chat-raised);
+  border-radius: 18px;
+}
+
+.msg-user .actions {
+  margin-top: 4px;
 }
 
 .msg-assistant {
   justify-content: flex-start;
+
+  .msg-wrapper {
+    max-width: 100%;
+    padding: 2px 0 0;
+    background: transparent;
+  }
+
+  .actions {
+    margin-top: 2px;
+  }
+}
+
+.msg-assistant + .msg-user,
+.msg-user + .msg-assistant {
+  margin-top: 18px;
+}
+
+.text {
+  white-space: pre-wrap;
 }
 
 .file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #333;
+  color: var(--chat-text);
   font-size: 13px;
-  color: #ddd;
+
+  svg {
+    flex-shrink: 0;
+    color: var(--chat-muted);
+  }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.markdown {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  p,
+  ul,
+  ol,
+  blockquote,
+  pre,
+  table {
+    margin: 0 0 0.75em;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 1em 0 0.4em;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  ul,
+  ol {
+    padding-left: 1.3em;
+  }
+
+  a {
+    color: #d6e2ff;
+  }
+
+  blockquote {
+    padding-left: 12px;
+    border-left: 2px solid #4a4a4a;
+    color: var(--chat-muted);
+  }
+
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.92em;
+  }
+
+  th,
+  td {
+    border: 1px solid #3a3a3a;
+    padding: 6px 8px;
+    text-align: left;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--chat-line);
+  }
 }
 
 .inline {
@@ -50,78 +172,140 @@
   color: inherit;
   font: inherit;
   line-height: 1.4;
+
+  &:focus-visible {
+    outline: none;
+  }
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 4px;
 
   &:not(:first-child) {
     margin-top: 8px;
   }
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: none;
+
+  &:hover:not(:disabled) {
+    background: #333;
+    color: var(--chat-text);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .msg-container .actions {
+    opacity: 0;
+  }
+
+  .msg-container:hover .actions,
+  .msg-container:focus-within .actions {
+    opacity: 1;
+  }
+}
+
+.confirm {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 
   button {
-    padding: 0;
-    border: none;
-    background: none;
-    color: #fff;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--chat-line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--chat-text);
     cursor: pointer;
-    text-decoration: underline;
+    font: inherit;
+    font-size: 13px;
+
+    &:hover:not(:disabled) {
+      background: #333;
+    }
 
     &:disabled {
       cursor: not-allowed;
       opacity: 0.5;
     }
   }
+}
 
-  .copy-failed {
-    color: #f0a8a8;
-  }
+.copy-failed {
+  color: var(--chat-danger);
 }
 
 .error {
-  color: #f0a8a8;
+  color: var(--chat-danger);
 
   &:not(:first-child) {
     margin-top: 8px;
   }
 
   p {
-    margin: 0;
-  }
-
-  button {
-    margin-top: 8px;
-    padding: 0;
-    border: none;
-    background: none;
-    color: #fff;
-    cursor: pointer;
-    text-decoration: underline;
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
+    margin: 0 0 8px;
   }
 }
 
-/* Pulsing effect for the thinking state */
 .thinking {
-  animation: pulse 1.5s ease-in-out infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--chat-muted);
+  font-size: 14px;
 }
 
-@keyframes pulse {
-  0% {
-    opacity: 0.7;
+.dots {
+  display: inline-flex;
+  gap: 4px;
+
+  span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--chat-muted);
+    animation: blink 1.2s infinite;
   }
 
-  50% {
-    opacity: 1;
+  span:nth-child(2) {
+    animation-delay: 0.2s;
   }
 
+  span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+}
+
+@keyframes blink {
+  0%,
+  80%,
   100% {
-    opacity: 0.7;
+    opacity: 0.25;
+  }
+
+  40% {
+    opacity: 1;
   }
 }

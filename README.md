@@ -2,7 +2,7 @@
 
 A single-page chat app for Google Gemini. You type a message, the reply streams in, and the thread stays open so you can keep going. Past chats sit in a sidebar and come back after a refresh. They live in this browser only. There is no account and no server-side history.
 
-The name in the header is ChatGpt. Replies come from Gemini (`gemini-3-flash-preview`).
+The name in the sidebar is ChatGPT. Replies come from Gemini (`gemini-3-flash-preview`).
 
 ## What you can do
 

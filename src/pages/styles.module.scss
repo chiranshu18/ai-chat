@@ -1,8 +1,10 @@
 .page-container {
-  background: #2f2f2f;
+  background: var(--chat-bg);
+  color: var(--chat-text);
   width: 100vw;
   height: 100vh;
   display: flex;
+  font-family: var(--chat-font);
 }
 
 .main-column {

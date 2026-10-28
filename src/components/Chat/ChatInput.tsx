@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import styles from "./chatInput.module.scss"
-import { Paperclip, SendHorizontal, Square } from 'lucide-react'
+import { FileText, Paperclip, SendHorizontal, Square } from 'lucide-react'
 import {
   DEFAULT_DOCUMENT_QUESTION,
   DOCUMENT_UNREADABLE,
@@ -90,6 +90,7 @@ const ChatInput = ({ onMessageSend, onStop, isThinking }: ChatInputProps) => {
     <div className={styles.composer}>
       {file ? (
         <div className={styles.file}>
+          <FileText size={14} aria-hidden="true" />
           <span>{file.name}</span>
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react"
+import { SquarePen, Trash2 } from "lucide-react"
 
 import { Conversation } from "@/types/chat"
 import styles from "./sidebar.module.scss"
@@ -22,7 +22,9 @@ const Sidebar = ({
 
   return (
     <aside className={styles.sidebar} aria-label="Conversations">
+      <div className={styles.brand}>ChatGPT</div>
       <button type="button" className={styles["new-chat"]} onClick={onNewChat}>
+        <SquarePen size={18} />
         New chat
       </button>
       <div className={styles.list}>

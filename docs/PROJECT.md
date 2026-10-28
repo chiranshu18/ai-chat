@@ -8,7 +8,7 @@ This file describes what is built today and the planned work after it. It is wri
 
 A single-page chat UI that streams replies from Google Gemini. Conversations are stored in the browser and listed in a sidebar. There is no auth and no settings UI.
 
-The product name in the header is the string `ChatGpt`. The model behind it is Gemini.
+The product name in the sidebar is the string `ChatGPT`. The model behind it is Gemini.
 
 ## Stack
 
@@ -49,7 +49,7 @@ Scripts in `package.json`:
 ```
 src/
   pages/
-    index.tsx              Home: sidebar plus a column of Header and Chat.
+    index.tsx              Home: sidebar plus the chat column.
     _app.tsx               Imports globals.css only.
     _document.tsx          lang="en", antialiased body.
     styles.module.scss     Full-viewport dark page (#2f2f2f).
@@ -58,15 +58,14 @@ src/
       document.ts          POST one file as base64. Returns extracted text. Does not call Gemini.
       hello.ts             Unused Next boilerplate. Safe to delete.
   components/
-    Layout/Header.tsx      Fixed 54px bar. Label "ChatGpt". New chat button.
-    Layout/Sidebar.tsx     Conversation list, select, delete, and new chat.
+    Layout/Sidebar.tsx     ChatGPT name, new chat, conversation list, and delete.
     Chat/Chat.tsx          State, send, stream reader.
     Chat/ChatInput.tsx     Textarea, document attach, and send icon.
     Chat/MessageList.tsx   Scrolls to the latest message.
     Chat/Message.tsx       User text or assistant markdown. Memoized on id, content, and status.
     Chat/CodeBlock.tsx     Fenced code wrapper. Prism highlight, or plain pre. Copy writes the raw fence.
     Chat/CopyButton.tsx    Clipboard write with Copied / Copy failed on the button.
-    Chat/EmptyState.tsx    "Hi, How can I help you today?"
+    Chat/EmptyState.tsx    "How can I help you today?"
   hooks/                   Empty. No hooks yet.
   lib/gemini.ts            GoogleGenAI client.
   lib/document.ts          Shared document size, type, and text limits.
@@ -83,10 +82,10 @@ Path alias: `@/*` → `src/*` (`tsconfig.json`).
 
 Layout math, used by later UI work:
 
-- The page is `100vh` and a row: a 260px sidebar, then the header/chat column. The header is `54px` tall and is a sibling of `Chat`, not a child of it. Chat width percentages are of that column.
-- `.chat-container` is `height: calc(100% - 54px)` and a column flex. That `54px` is the header.
-- The chat column width is `60%`, centered.
-- The message list is `flex: 1; min-height: 0; overflow: auto`. The composer sits under it in normal flow, `min-height: 54px`, with `24px` of space below it. The textarea grows to `160px`, then scrolls.
+- The page is `100vh` and a row: a 260px sidebar, then the chat column. The sidebar stays in the row. There is no header and no control to hide the sidebar.
+- `.chat-container` is `height: 100%` and a column flex. It fills the chat column.
+- The transcript and composer are `min(740px, 100%)`, centered, with 16px of side padding. They are not a percentage of the column.
+- The message list is `flex: 1; min-height: 0; overflow: auto`. The composer sits under it in normal flow, with `24px` of space below it. The textarea grows to `160px`, then scrolls.
 
 ## Data model today
 
@@ -170,12 +169,12 @@ The client is created at module load. A missing key is rejected in the API route
 ## UI behavior today
 
 - Empty `messages` shows `EmptyState`. Any length shows `MessageList`.
-- User bubbles are right-aligned plain text, with Edit when nothing is streaming. If that message has an attachment, the file name is shown and the extracted text is not. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant bubbles are left-aligned markdown (`remark-gfm`: tables, strikethrough, task lists).
+- User messages are right-aligned in a bubble, with Edit when nothing is streaming. If that message has an attachment, the file name is shown and the extracted text is not. Save rewrites that message, drops every later message, and streams a new reply. Cancel leaves the transcript unchanged. Assistant replies are left-aligned markdown on the page background (`remark-gfm`: tables, strikethrough, task lists).
 - Fenced code in assistant messages is highlighted with Prism (`react-syntax-highlighter`, `oneDark`) when the language tag is one Prism knows, including aliases such as `js` and `ts`. A missing or unknown language stays plain preformatted text inside the same `CodeBlock` wrapper. Each block has Copy, which writes that fence's raw source. Inline code stays inline. User messages stay plain text. A finished assistant message has Copy response, which writes `message.content`. Both controls are hidden while that message is `streaming` or empty. A clipboard rejection changes the button to `Copy failed` and does not alert. `Message` skips re-rendering when its id, content, status, error, streaming flag, and regenerate flag are unchanged, so a chunk does not redraw earlier bubbles. `CodeBlock` skips re-highlighting when its source and language are unchanged.
 - `MessageList` follows the bottom when a message is added, and during streaming only if the reader has not scrolled up. A scroll that decreases `scrollTop` stops following until the list is within 80px of the bottom again. Chunks use `behavior: "auto"`; a new message uses `"smooth"`.
-- `.thinking` in `src/components/Chat/message.module.scss` pulses the empty streaming bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
-- Colors are hardcoded dark (`#2f2f2f` page, `#212121` bubbles and composer). `globals.css` light/dark variables do not drive the chat.
-- `src/pages/index.tsx` imports `Geist` and `Geist_Mono` from `next/font/google` and never uses them. `globals.css` references `--font-geist-sans` / `--font-geist-mono`, which are never set. Body font is Arial; the header sets `font-family: Roboto` without loading that font.
+- An empty streaming assistant message shows a small Thinking indicator. It does not pulse the bubble. An assistant message with `status: "error"` shows its `error` string and a Retry button. The latest assistant message also shows Regenerate when it is `complete`, `cancelled`, or `error` and nothing is streaming.
+- The page is a dark UI driven by the `--chat-*` tokens in `src/styles/globals.css`. User bubbles and the composer use the raised surface. Assistant text does not. `globals.css` light/dark variables do not drive the chat.
+- Body font is the system sans stack in `--chat-font`. The visual checklist for this pass is `docs/UI.md`.
 
 ## Constraints later features must respect
 
@@ -404,18 +403,16 @@ Learn: message manipulation.
 
 Learn: conversation lifecycle.
 
-**Behavior.** A New chat control in the header clears the transcript and shows `EmptyState`. If a reply is streaming, abort it first (feature 1). The composer clears.
+**Behavior.** A New chat control clears the transcript and shows `EmptyState`. If a reply is streaming, abort it first (feature 1). The composer clears. New chat lives in the sidebar. There is no header.
 
 **Files.**
 
-- Keep `Header` and `Chat` as siblings in `src/pages/index.tsx`. Do not render `Header` inside `Chat`. `.chat-container` is `height: calc(100% - 54px)` because the header is that sibling; nesting it would double-count the 54px and break the layout.
-- `src/components/Layout/Header.tsx` — New chat button and an `onNewChat` prop. Leave `Header` presentational.
-- `src/pages/index.tsx` — hold a `resetKey` and pass `key={resetKey}` to `Chat`. New chat increments the key, which remounts `Chat` empty and clears the composer. This is the cheap version. Features 6 and 7 lift conversation state and replace the remount with a store action.
-- `src/components/Chat/Chat.tsx` — abort the in-flight request in an effect cleanup so the remount cannot apply leftover chunks.
+- `src/pages/index.tsx` — sidebar and `Chat` are siblings. Do not render a header, and do not render the sidebar inside `Chat`. `.chat-container` is `height: 100%` because it fills the chat column.
+- `src/components/Chat/Chat.tsx` — abort the in-flight request in an effect cleanup so a remount cannot apply leftover chunks.
 
 **Connects to.** Feature 6 treats New chat as "append a `Conversation` and select it" instead of remounting. Swap the handler body then. Do not introduce the store in this feature.
 
-**Shipped.** `Header` stays a sibling of `Chat` and only receives `onNewChat`. Abort-on-unmount was already in `Chat` from feature 1. Feature 6 replaced the `resetKey` remount: New chat now appends a stored conversation. Do not put the remount back.
+**Shipped.** New chat is the sidebar control. It prepends a stored conversation and selects it. Do not put the remount back, and do not add the header back.
 
 **Done when.**
 
@@ -453,17 +450,17 @@ Learn: `localStorage`, serialization.
 
 Learn: data modeling, state architecture.
 
-**Behavior.** A sidebar lists conversations by title, newest `updatedAt` first. Clicking one loads it. New chat (header or sidebar) creates one and selects it. Each row can delete that conversation. Deleting the active one selects a neighbor, or creates an empty conversation if the list would be empty. The main column is the active conversation only. Switching chats aborts any in-flight stream so chunks cannot land in the wrong conversation.
+**Behavior.** A sidebar lists conversations by title, newest `updatedAt` first. Clicking one loads it. New chat in the sidebar creates one and selects it. Each row can delete that conversation. Deleting the active one selects a neighbor, or creates an empty conversation if the list would be empty. The main column is the active conversation only. Switching chats aborts any in-flight stream so chunks cannot land in the wrong conversation.
 
 **Files.**
 
 - `src/components/Layout/Sidebar.tsx` plus `sidebar.module.scss` — list, select, delete, new.
-- `src/pages/index.tsx` and `src/pages/styles.module.scss` — row layout: sidebar + current header/chat column. Narrow the 60% column only if the sidebar makes it overflow; keep the dark page.
+- `src/pages/index.tsx` and `src/pages/styles.module.scss` — row layout: sidebar + chat column. Keep the dark page.
 - `src/components/Chat/Chat.tsx` — read and write `conversations[activeId]`. Include `activeId` in the stream completion check so a late chunk is dropped after a switch.
 
 **Connects to.** Persistence from feature 6 is the state. No new storage key. Settings from feature 11 are per conversation (`conversation.settings`).
 
-**Shipped.** `Sidebar` is a full-height sibling of the header/chat column. Rows are `conversation.title`, newest `updatedAt` first. Header and sidebar New chat both prepend and select. Delete removes that row. Deleting the open chat aborts its reply and selects the next row in that order, or the previous row if it was last. Deleting a different row leaves the active reply running. An empty list is replaced with one new conversation. Editing the first user message updates the title. Chunks and `complete` are applied only while that conversation is still active.
+**Shipped.** `Sidebar` is a full-height sibling of the chat column. It shows the name `ChatGPT`, New chat, and the list. Rows are `conversation.title`, newest `updatedAt` first. New chat prepends and selects. Delete removes that row. Deleting the open chat aborts its reply and selects the next row in that order, or the previous row if it was last. Deleting a different row leaves the active reply running. An empty list is replaced with one new conversation. Editing the first user message updates the title. Chunks and `complete` are applied only while that conversation is still active.
 
 **Done when.**
 
@@ -643,7 +640,7 @@ The priority numbers above are the order to build. Three rules that override "do
 - Feature 2 is shipped. Failures set `status: "error"`. Do not treat abort as an error, and do not render `Thinking...` for an error message.
 - Feature 3 is shipped. Regenerate resends the history above the latest assistant message. Do not append a second user message.
 - Feature 4 is shipped. Editing a user message keeps that id, drops every message after it, and resends. Do not send an empty trimmed edit.
-- Feature 5 is shipped. Do not render `Header` inside `Chat`.
+- Feature 5 is shipped. New chat is the sidebar control. Do not add a header, and do not remount `Chat`.
 - Feature 6 is shipped. Persist `ChatStore` under `ai-chat:v1`. New chat appends a conversation. Do not go back to remounting `Chat`, and do not persist a bare `Message[]`.
 - Feature 7 is shipped. The sidebar reads that list. Do not add a storage key. Switching, or deleting the open conversation, aborts the in-flight reply.
 - Feature 8 is shipped. Highlight fenced code with Prism only. Do not add Shiki.

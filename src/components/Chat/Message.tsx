@@ -1,4 +1,5 @@
 import { isValidElement, memo, useEffect, useState, type ReactNode } from "react"
+import { FileText, Pencil, RefreshCw, RotateCcw, Copy } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -86,14 +87,19 @@ const Message = ({
 
   return (
     <div className={`${styles['msg-container']} ${isUser ? styles['msg-user'] : styles['msg-assistant']}`}>
-      <div className={`${styles['msg-wrapper']} ${showThinking ? styles.thinking : ""} ${isEditing ? styles.editing : ""}`}>
+      <div className={`${styles['msg-wrapper']} ${isEditing ? styles.editing : ""}`}>
         {showThinking ? (
-          "Thinking..."
+          <span className={styles.thinking}>
+            <span className={styles.dots} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            Thinking
+          </span>
         ) : isEditing ? (
           <>
-            {message.attachment ? (
-              <div className={styles.file}>{message.attachment.name}</div>
-            ) : null}
+            {message.attachment ? <FileChip name={message.attachment.name} /> : null}
             <textarea
               className={styles['edit-input']}
               value={draft}
@@ -107,7 +113,7 @@ const Message = ({
                 }
               }}
             />
-            <div className={styles.actions}>
+            <div className={styles.confirm}>
               <button type="button" onClick={saveEdit} disabled={!draft.trim()}>
                 Save
               </button>
@@ -118,14 +124,19 @@ const Message = ({
           </>
         ) : isUser ? (
           <>
-            {message.attachment ? (
-              <div className={styles.file}>{message.attachment.name}</div>
-            ) : null}
-            {message.content}
+            <div className={styles.bubble}>
+              {message.attachment ? <FileChip name={message.attachment.name} /> : null}
+              <div className={styles.text}>{message.content}</div>
+            </div>
             {canEdit ? (
               <div className={styles.actions}>
-                <button type="button" onClick={startEdit}>
-                  Edit
+                <button
+                  type="button"
+                  className={styles["icon-button"]}
+                  onClick={startEdit}
+                  aria-label="Edit"
+                >
+                  <Pencil size={15} />
                 </button>
               </div>
             ) : null}
@@ -134,9 +145,11 @@ const Message = ({
           <>
             {message.content ? (
               <ShowCodeCopy.Provider value={message.status !== "streaming"}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {message.content}
-                </ReactMarkdown>
+                <div className={styles.markdown}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
               </ShowCodeCopy.Provider>
             ) : null}
             {isError ? (
@@ -144,9 +157,12 @@ const Message = ({
                 <p>{message.error || "Something went wrong"}</p>
                 <button
                   type="button"
+                  className={styles["icon-button"]}
                   onClick={() => onRetry(message.id)}
                   disabled={isStreaming}
+                  aria-label="Retry"
                 >
+                  <RotateCcw size={15} />
                   Retry
                 </button>
               </div>
@@ -157,16 +173,20 @@ const Message = ({
                   <CopyButton
                     text={message.content}
                     idle="Copy response"
+                    className={styles["icon-button"]}
                     failedClassName={styles["copy-failed"]}
+                    icon={<Copy size={15} />}
                   />
                 ) : null}
                 {canRegenerate ? (
                   <button
                     type="button"
+                    className={styles["icon-button"]}
                     onClick={() => onRegenerate(message.id)}
                     disabled={isStreaming}
+                    aria-label="Regenerate"
                   >
-                    Regenerate
+                    <RefreshCw size={15} />
                   </button>
                 ) : null}
               </div>
@@ -174,6 +194,15 @@ const Message = ({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function FileChip({ name }: { name: string }) {
+  return (
+    <div className={styles.file}>
+      <FileText size={14} aria-hidden="true" />
+      <span>{name}</span>
     </div>
   )
 }

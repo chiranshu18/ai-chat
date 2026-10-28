@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import Header from "@/components/Layout/Header"
 import Sidebar from "@/components/Layout/Sidebar"
 import Chat, { ChatActions } from "@/components/Chat/Chat"
 import { ChatStore } from "@/types/chat"
@@ -23,7 +22,6 @@ export default function Home() {
         onDelete={(id) => actionsRef.current.deleteConversation(id)}
       />
       <div className={styles['main-column']}>
-        <Header onNewChat={() => actionsRef.current.newChat()} />
         <Chat
           onRegisterActions={(actions) => {
             actionsRef.current = actions;

@@ -8,19 +8,37 @@
 
 .toolbar {
   display: flex;
-  justify-content: flex-end;
-  padding: 6px 10px 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  padding: 6px 8px 0 12px;
+}
+
+.lang {
+  color: #9a9aa3;
+  font-size: 12px;
 }
 
 .copy {
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
   border: none;
-  background: none;
-  color: #fff;
+  border-radius: 8px;
+  background: transparent;
+  color: #c8c8d0;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  text-decoration: underline;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
 }
 
 .failed {

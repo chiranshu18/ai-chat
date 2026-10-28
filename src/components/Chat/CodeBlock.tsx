@@ -3,6 +3,8 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { refractor } from "refractor/all"
 
+import { Copy } from "lucide-react"
+
 import CopyButton from "./CopyButton"
 import styles from "./codeBlock.module.scss"
 
@@ -28,14 +30,18 @@ function CodeBlock({ code, language }: CodeBlockProps) {
 
   return (
     <div className={styles.wrap}>
-      {showCopy ? (
+      {(knownLanguage || showCopy) ? (
         <div className={styles.toolbar}>
-          <CopyButton
-            text={code}
-            idle="Copy"
-            className={styles.copy}
-            failedClassName={styles.failed}
-          />
+          <span className={styles.lang}>{knownLanguage ?? ""}</span>
+          {showCopy ? (
+            <CopyButton
+              text={code}
+              idle="Copy"
+              className={styles.copy}
+              failedClassName={styles.failed}
+              icon={<Copy size={14} />}
+            />
+          ) : null}
         </div>
       ) : null}
       <div className={styles.frame}>

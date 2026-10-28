@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
 interface CopyButtonProps {
   text: string
   idle: string
   className?: string
   failedClassName?: string
+  icon?: ReactNode
 }
 
-const CopyButton = ({ text, idle, className, failedClassName }: CopyButtonProps) => {
+const CopyButton = ({ text, idle, className, failedClassName, icon }: CopyButtonProps) => {
   const [notice, setNotice] = useState<{ kind: "copied" | "failed"; id: number } | null>(null)
 
   useEffect(() => {
@@ -39,8 +40,8 @@ const CopyButton = ({ text, idle, className, failedClassName }: CopyButtonProps)
     : className
 
   return (
-    <button type="button" className={buttonClass} onClick={onClick}>
-      {label}
+    <button type="button" className={buttonClass} aria-label={label} onClick={onClick}>
+      {notice ? label : icon ?? label}
     </button>
   )
 }
