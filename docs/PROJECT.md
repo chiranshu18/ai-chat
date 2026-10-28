@@ -42,7 +42,7 @@ Scripts in `package.json`:
    `.env*` is gitignored. The key is read only in `src/lib/gemini.ts` on the server. Do not send it to the browser.
 3. `npm run dev` and open the local URL Next prints.
 
-There is no README, no `.env.example`, and no test suite.
+`README.md` is a short public overview. There is no `.env.example` and no test suite.
 
 ## Directory map
 
